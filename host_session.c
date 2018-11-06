@@ -42,7 +42,7 @@ struct session_init create_join_session(GUID session_id) {
   return desc;
 }
 
-HRESULT host_session(struct session_init* desc) {
+HRESULT launch_session(struct session_init* desc) {
   LPDIRECTPLAYLOBBY3A lobby = NULL;
   DWORD app_id;
   LPDPNAME dp_player_name = NULL;
