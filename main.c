@@ -4,8 +4,6 @@
 #include "host_session.h"
 #include "debug.h"
 
-/* static GUID GUID_TEST_APP = {0x5bfdb060, 0x6a4, 0x11d0, {0x9c, 0x4f, 0x0, 0xa0, 0xc9, 0x5, 0x42, 0x5e}}; */
-
 static struct option long_options[] = {
   {"host", no_argument, NULL, 'h'},
   {"join", required_argument, NULL, 'j'},
@@ -25,6 +23,7 @@ HRESULT parse_guid(char* input, GUID* out_guid) {
 }
 
 BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobby_message* message) {
+  printf("Receiving message... %ld\n", message->flags);
   if (message->flags != DPLMSG_SYSTEM) {
     dplobby_message_free(message);
     return TRUE;
@@ -117,8 +116,8 @@ int main(int argc, char** argv) {
       return 1;
   }
 
-  if (parse_cli_args(argc, argv, &desc) != DP_OK) {
-    printf("Could not parse CLI args\n");
+  HRESULT result = parse_cli_args(argc, argv, &desc);
+  if (result != DP_OK) {
     return 1;
   }
 
@@ -135,21 +134,20 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  HRESULT result = launch_session(&desc);
-  if (result == DP_OK) {
-    dplobby_process_messages(&desc, onmessage);
+  result = launch_session(&desc);
+  if (result != DP_OK) {
+    printf("Fail: %ld\n", result);
+    char* message = get_error_message(result);
+    if (message != NULL) {
+      printf("%s\n", message);
+    }
+    free(message);
 
-    printf("Success!\n");
-    return 0;
+    return 1;
   }
 
-  printf("Fail: %ld\n", result);
+  process_session_messages(&desc, onmessage);
 
-  char* message = get_error_message(result);
-  if (message != NULL) {
-    printf("%s\n", message);
-  }
-  free(message);
-
-  return 1;
+  printf("Success!\n");
+  return 0;
 }

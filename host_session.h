@@ -27,4 +27,4 @@ typedef BOOL (*session_onmessage)(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplob
 struct session_init create_host_session();
 struct session_init create_join_session();
 HRESULT launch_session(struct session_init* desc);
-HRESULT dplobby_process_messages(struct session_init* desc, session_onmessage callback);
+HRESULT process_session_messages(struct session_init* desc, session_onmessage callback);

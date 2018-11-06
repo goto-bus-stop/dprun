@@ -95,7 +95,7 @@ BOOL _receive_message(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, session_onmessage
   return callback(lobby, app_id, message);
 }
 
-HRESULT dplobby_process_messages(struct session_init* desc, session_onmessage callback) {
+HRESULT process_session_messages(struct session_init* desc, session_onmessage callback) {
   struct session_priv* data = get_private(desc);
 
   printf("App: %ld\n", data->app_id);
