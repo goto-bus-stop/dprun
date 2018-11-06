@@ -10,16 +10,34 @@ struct session_priv* get_private(struct session_init* desc) {
   return (struct session_priv*) desc->_private;
 }
 
+void init_private(struct session_init* desc) {
+  get_private(desc)->dplobby = NULL;
+  get_private(desc)->app_id = 0;
+  get_private(desc)->message_event = CreateEvent(NULL, FALSE, FALSE, NULL);
+}
+
 struct session_init create_host_session() {
   struct session_init desc = {
     .player_name = NULL,
+    .session_id = GUID_NULL,
     .application = GUID_NULL,
     .service_provider = GUID_NULL,
   };
 
-  get_private(&desc)->dplobby = NULL;
-  get_private(&desc)->app_id = 0;
-  get_private(&desc)->message_event = CreateEvent(NULL, FALSE, FALSE, NULL);
+  init_private(&desc);
+
+  return desc;
+}
+
+struct session_init create_join_session(GUID session_id) {
+  struct session_init desc = {
+    .player_name = NULL,
+    .session_id = session_id,
+    .application = GUID_NULL,
+    .service_provider = GUID_NULL,
+  };
+
+  init_private(&desc);
 
   return desc;
 }
@@ -49,6 +67,8 @@ HRESULT host_session(struct session_init* desc) {
   result = dplobby_run_application(lobby, &app_id, dp_connection, event);
   CHECK("RunApplication", result);
 
+  desc->session_id = dp_session_desc->guidInstance;
+
   get_private(desc)->dplobby = lobby;
   get_private(desc)->app_id = app_id;
   get_private(desc)->message_event = event;
@@ -72,7 +92,7 @@ BOOL _receive_message(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, session_onmessage
     return FALSE;
   }
 
-  return callback(message);
+  return callback(lobby, app_id, message);
 }
 
 HRESULT dplobby_process_messages(struct session_init* desc, session_onmessage callback) {

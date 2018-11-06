@@ -15,13 +15,14 @@ struct session_priv {
 struct session_init {
   // Public config
   char* player_name;
+  GUID session_id;
   GUID application;
   GUID service_provider;
   // Don't touch dis
   char _private[sizeof(struct session_priv)];
 };
 
-typedef BOOL (*session_onmessage)(dplobby_message* message);
+typedef BOOL (*session_onmessage)(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobby_message* message);
 
 struct session_init create_host_session();
 HRESULT host_session(struct session_init* desc);
