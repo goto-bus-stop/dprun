@@ -4,12 +4,6 @@
 #include "host_session.h"
 #include "debug.h"
 
-/*
---address {685BC400-9D2C-11cf-A9CD-00AA006886E3}=127.0.0.1
---address {685BC400-9D2C-11cf-A9CD-00AA006886E3}=i:8000
---address {685BC400-9D2C-11cf-A9CD-00AA006886E3}=b:DEADBEEF
-*/
-
 static struct option long_options[] = {
   {"host", no_argument, NULL, 'h'},
   {"join", required_argument, NULL, 'j'},
@@ -53,6 +47,10 @@ HRESULT parse_address_chunk(char* input, DPCOMPOUNDADDRESSELEMENT** out_address)
   else if (strcmp(guid_str, "INetPort") == 0) data_type = DPAID_INetPort;
   else if (strcmp(guid_str, "ComPort") == 0) data_type = DPAID_ComPort;
   else result = parse_guid(guid_str, &data_type);
+
+  // --address {685BC400-9D2C-11cf-A9CD-00AA006886E3}=i:8000
+  // --address {685BC400-9D2C-11cf-A9CD-00AA006886E3}=b:DEADBEEF
+  // --address {685BC400-9D2C-11cf-A9CD-00AA006886E3}=127.0.0.1
 
   if (eq[1] == 'i' && eq[2] == ':') {
     // integer
@@ -221,6 +219,15 @@ int main(int argc, char** argv) {
 
     return 1;
   }
+
+  char* session_id;
+  StringFromIID(&desc.session_id, (wchar_t**)&session_id);
+
+  // Convert wchar_t to char. lmao
+  for (int i = 1; i < 38; i++) session_id[i] = session_id[2 * i];
+  session_id[38] = '\0';
+  printf("launched session %s\n", session_id);
+  free(session_id);
 
   process_session_messages(&desc, onmessage);
 
