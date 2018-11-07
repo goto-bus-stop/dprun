@@ -13,7 +13,12 @@ all: bin/debug/dprun.exe bin/release/dprun.exe
 	@ls -sh1 bin/*/dprun.exe
 debug: bin/debug/dprun.exe
 release: bin/release/dprun.exe
-.PHONY: all debug release
+
+clean:
+	rm -f $(OBJECTS)
+	rm -f bin/debug/dprun.exe bin/release/dprun.exe
+
+.PHONY: all debug release clean
 
 %.o: %.c
 	$(CC) -c -Wall -g -I./include $< -o $@
@@ -24,10 +29,10 @@ bin/release:
 	mkdir -p bin/release
 
 bin/debug/dprun.exe: bin/debug $(OBJECTS)
-	$(CC) -Wall -g -o $@ $(OBJECTS) -static $(LDFLAGS)
+	$(CC) -Wall -DWIN32_LEAN_AND_MEAN -g -o $@ $(OBJECTS) -static $(LDFLAGS)
 
 bin/release/dprun.exe: bin/release $(OBJECTS)
-	$(CC) -Wall -O3 -s -o $@ $(OBJECTS) -static $(LDFLAGS)
+	$(CC) -Wall -DWIN32_LEAN_AND_MEAN -O3 -s -o $@ $(OBJECTS) -static $(LDFLAGS)
 
 run: bin/debug/dprun.exe
 	wine bin/debug/dprun.exe
