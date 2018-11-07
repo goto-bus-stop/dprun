@@ -87,13 +87,25 @@ HRESULT dpsess_create(LPDPSESSIONDESC2* out_session_desc) {
   return DP_OK;
 }
 
+void dpsess_generate_id(LPDPSESSIONDESC2 session_desc) {
+  CoCreateGuid(&session_desc->guidInstance);
+}
+
+void dpsess_set_id(LPDPSESSIONDESC2 session_desc, GUID session_id) {
+  session_desc->guidInstance = session_id;
+}
+
+void dpsess_set_application(LPDPSESSIONDESC2 session_desc, GUID application) {
+  session_desc->guidApplication = application;
+}
+
 HRESULT dpsess_create_host(GUID application, LPDPSESSIONDESC2* out_session_desc) {
   LPDPSESSIONDESC2 session_desc;
   HRESULT result = dpsess_create(&session_desc);
   CHECK("dpsess_create", result);
 
-  CoCreateGuid(&session_desc->guidInstance);
-  session_desc->guidApplication = application;
+  dpsess_generate_id(session_desc);
+  dpsess_set_application(session_desc, application);
 
   *out_session_desc = session_desc;
   return DP_OK;

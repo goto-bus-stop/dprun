@@ -30,6 +30,9 @@ HRESULT dpname_create(char* name, LPDPNAME* out_name);
 
 HRESULT dpsess_create(LPDPSESSIONDESC2* out_session_desc);
 HRESULT dpsess_create_host(GUID application, LPDPSESSIONDESC2* out_session_desc);
+void dpsess_generate_id(LPDPSESSIONDESC2 session_desc);
+void dpsess_set_id(LPDPSESSIONDESC2 session_desc, GUID session_id);
+void dpsess_set_application(LPDPSESSIONDESC2 session_desc, GUID application);
 
 HRESULT dpconn_create(LPDPSESSIONDESC2 session_desc, LPDPNAME player_name, LPDPLCONNECTION* out_connection);
 void dpconn_set_host(LPDPLCONNECTION connection, char is_host);

@@ -55,8 +55,10 @@ HRESULT launch_session(struct session_init* desc) {
   result = dpname_create(desc->player_name, &dp_player_name);
   CHECK("dpname_create", result);
 
-  result = dpsess_create_host(desc->application, &dp_session_desc);
-  CHECK("dpsess_create_host", result);
+  result = dpsess_create(&dp_session_desc);
+  CHECK("dpsess_create", result);
+  dpsess_set_application(dp_session_desc, desc->application);
+  dpsess_set_id(dp_session_desc, desc->session_id);
 
   result = dpconn_create(dp_session_desc, dp_player_name, &dp_connection);
   CHECK("dpconn_create", result);
