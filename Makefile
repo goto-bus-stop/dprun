@@ -1,3 +1,6 @@
+# Non windows only!
+# Requires Wine and mingw-w64!
+
 CC = i686-w64-mingw32-gcc
 STRIP = i686-w64-mingw32-strip
 
@@ -33,7 +36,8 @@ test-host: bin/debug/dprun.exe
 	wine bin/debug/dprun.exe --host \
 	  -p 'Host username' \
 	  --application '{5BFDB060-06A4-11d0-9C4F-00A0C905425E}' \
-	  --service-provider '{36E95EE0-8577-11cf-960C-0080C7534E82}'
+	  --service-provider '{36E95EE0-8577-11cf-960C-0080C7534E82}' \
+	  --address INet=127.0.0.1
 
 test-join: bin/debug/dprun.exe
 	false

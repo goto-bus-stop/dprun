@@ -4,6 +4,17 @@
  * DirectPlay wrappers
  */
 
+typedef struct dpaddress {
+  DPCOMPOUNDADDRESSELEMENT* elements;
+  DWORD num_elements;
+} dpaddress;
+
+HRESULT dpaddrelement_create(GUID data_type, void* data, DWORD data_size, DPCOMPOUNDADDRESSELEMENT** out_element);
+HRESULT dpaddress_create(dpaddress** out_address);
+HRESULT dpaddress_add(dpaddress* address, DPCOMPOUNDADDRESSELEMENT* element);
+HRESULT dpaddress_create_element(dpaddress* address, GUID data_type, void* data, DWORD data_size);
+HRESULT dpaddress_finish(dpaddress* address, void** out_elements, DWORD* out_size);
+
 typedef struct dplobby_message {
   DWORD flags;
   void* data;
@@ -23,5 +34,3 @@ HRESULT dpsess_create_host(GUID application, LPDPSESSIONDESC2* out_session_desc)
 HRESULT dpconn_create(LPDPSESSIONDESC2 session_desc, LPDPNAME player_name, LPDPLCONNECTION* out_connection);
 void dpconn_set_host(LPDPLCONNECTION connection, char is_host);
 void dpconn_set_service_provider(LPDPLCONNECTION connection, GUID service_provider);
-
-

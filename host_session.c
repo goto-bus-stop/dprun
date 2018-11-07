@@ -4,13 +4,12 @@
 #include "dpwrap.h"
 #include "debug.h"
 
-#define CHECK(tag, result) if (result != DP_OK) { printf("%s failed: %s\n", tag, get_error_message(result)); return result; }
-
 struct session_priv* get_private(struct session_init* desc) {
   return (struct session_priv*) desc->_private;
 }
 
-void init_private(struct session_init* desc) {
+void init_session(struct session_init* desc) {
+  dpaddress_create(&desc->address);
   get_private(desc)->dplobby = NULL;
   get_private(desc)->app_id = 0;
   get_private(desc)->message_event = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -24,7 +23,7 @@ struct session_init create_host_session() {
     .service_provider = GUID_NULL,
   };
 
-  init_private(&desc);
+  init_session(&desc);
 
   return desc;
 }
@@ -37,7 +36,7 @@ struct session_init create_join_session(GUID session_id) {
     .service_provider = GUID_NULL,
   };
 
-  init_private(&desc);
+  init_session(&desc);
 
   return desc;
 }
@@ -64,6 +63,9 @@ HRESULT launch_session(struct session_init* desc) {
   dpconn_set_host(dp_connection, TRUE);
   dpconn_set_service_provider(dp_connection, desc->service_provider);
 
+  result = dpaddress_finish(desc->address, &dp_connection->lpAddress, &dp_connection->dwAddressSize);
+  CHECK("dpaddress_finish", result);
+
   result = dplobby_run_application(lobby, &app_id, dp_connection, event);
   CHECK("RunApplication", result);
 
@@ -77,11 +79,12 @@ HRESULT launch_session(struct session_init* desc) {
   if (dp_connection != NULL) free(dp_connection);
   if (dp_session_desc != NULL) free(dp_session_desc);
   if (dp_player_name != NULL) free(dp_player_name);
+  // TODO free dpaddress from session_init maybe
 
   return result;
 }
 
-BOOL _receive_message(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, session_onmessage callback) {
+BOOL _handle_message(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, session_onmessage callback) {
   dplobby_message* message = NULL;
   HRESULT result = dplobby_receive_message(lobby, app_id, &message);
 
@@ -101,7 +104,7 @@ HRESULT process_session_messages(struct session_init* desc, session_onmessage ca
   printf("App: %ld\n", data->app_id);
 
   while (WaitForSingleObject(data->message_event, INFINITE) == WAIT_OBJECT_0) {
-    if (_receive_message(data->dplobby, data->app_id, callback) == FALSE) {
+    if (_handle_message(data->dplobby, data->app_id, callback) == FALSE) {
       break;
     }
   }

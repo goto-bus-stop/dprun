@@ -18,6 +18,7 @@ struct session_init {
   GUID session_id;
   GUID application;
   GUID service_provider;
+  dpaddress* address;
   // Don't touch dis
   char _private[sizeof(struct session_priv)];
 };

@@ -3,8 +3,6 @@
 #include "dpwrap.h"
 #include "debug.h"
 
-#define CHECK(tag, result) if (result != DP_OK) { printf("%s failed: %s\n", tag, get_error_message(result)); return result; }
-
 void dplobby_message_free(dplobby_message* message) {
   if (message->data != NULL) free(message->data);
   free(message);
@@ -123,4 +121,60 @@ void dpconn_set_host(LPDPLCONNECTION connection, char is_host) {
 
 void dpconn_set_service_provider(LPDPLCONNECTION connection, GUID service_provider) {
   connection->guidSP = service_provider;
+}
+
+HRESULT dpaddrelement_create(GUID data_type, void* data, DWORD data_size, DPCOMPOUNDADDRESSELEMENT** out_element) {
+  DPCOMPOUNDADDRESSELEMENT* element = calloc(1, sizeof(DPCOMPOUNDADDRESSELEMENT));
+  if (element == NULL) return DPERR_OUTOFMEMORY;
+  element->guidDataType = data_type;
+  element->dwDataSize = data_size;
+  element->lpData = data;
+
+  *out_element = element;
+  return DP_OK;
+}
+
+HRESULT dpaddress_create(dpaddress** out_address) {
+  dpaddress* address = calloc(1, sizeof(dpaddress));
+  if (address == NULL) return DPERR_OUTOFMEMORY;
+  address->elements = NULL;
+  address->num_elements = 0;
+
+  *out_address = address;
+  return DP_OK;
+}
+
+HRESULT dpaddress_add(dpaddress* address, DPCOMPOUNDADDRESSELEMENT* element) {
+  DWORD prev_num_elements = address->num_elements;
+  DPCOMPOUNDADDRESSELEMENT* prev_elements = address->elements;
+
+  address->elements = calloc(address->num_elements + 1, sizeof(DPCOMPOUNDADDRESSELEMENT));
+  if (address->elements == NULL) return DPERR_OUTOFMEMORY;
+
+  if (prev_elements != NULL) {
+    memcpy(address->elements, prev_elements, sizeof(DPCOMPOUNDADDRESSELEMENT) * prev_num_elements);
+  }
+  memcpy(&address->elements[prev_num_elements], element, sizeof(DPCOMPOUNDADDRESSELEMENT));
+
+  address->num_elements += 1;
+
+  return DP_OK;
+}
+
+HRESULT dpaddress_create_element(dpaddress* address, GUID data_type, void* data, DWORD data_size) {
+  DPCOMPOUNDADDRESSELEMENT* element = NULL;
+  HRESULT result = dpaddrelement_create(data_type, data, data_size, &element);
+  if (result == DP_OK) {
+    result = dpaddress_add(address, element);
+  }
+  if (element != NULL) {
+    free(element);
+  }
+  return result;
+}
+
+HRESULT dpaddress_finish(dpaddress* address, void** out_elements, DWORD* out_size) {
+  *out_size = address->num_elements;
+  *out_elements = address->elements;
+  return DP_OK;
 }
