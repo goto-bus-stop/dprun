@@ -77,7 +77,11 @@ HRESULT parse_address_chunk(char* input, DPCOMPOUNDADDRESSELEMENT** out_address)
 
 BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobby_message* message) {
   printf("Receiving message... %ld\n", message->flags);
-  if (message->flags != DPLMSG_SYSTEM) {
+  for (int i = 0; i < message->data_size; i++) {
+    printf("%02X", ((char*) message->data)[i]);
+  }
+  printf("\n");
+  if (message->flags == DPLMSG_STANDARD) {
     dplobby_message_free(message);
     return TRUE;
   }
