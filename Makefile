@@ -2,7 +2,6 @@
 # Requires Wine and mingw-w64!
 
 CC = i686-w64-mingw32-gcc
-STRIP = i686-w64-mingw32-strip
 
 LDFLAGS = -ldxguid -ldplayx -lole32 -luuid
 
@@ -10,6 +9,8 @@ SOURCES = $(shell find . -name "*.c")
 OBJECTS = $(SOURCES:.c=.o)
 
 all: bin/debug/dprun.exe bin/release/dprun.exe
+	@echo "Sizes:"
+	@ls -sh1 bin/*/dprun.exe
 debug: bin/debug/dprun.exe
 release: bin/release/dprun.exe
 .PHONY: all debug release
@@ -26,8 +27,7 @@ bin/debug/dprun.exe: bin/debug $(OBJECTS)
 	$(CC) -Wall -g -o $@ $(OBJECTS) -static $(LDFLAGS)
 
 bin/release/dprun.exe: bin/release $(OBJECTS)
-	$(CC) -Wall -O3 -o $@ $(OBJECTS) -static $(LDFLAGS)
-	$(STRIP) $@
+	$(CC) -Wall -O3 -s -o $@ $(OBJECTS) -static $(LDFLAGS)
 
 run: bin/debug/dprun.exe
 	wine bin/debug/dprun.exe
