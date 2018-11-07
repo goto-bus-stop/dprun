@@ -3,7 +3,7 @@
 #include "dpwrap.h"
 #include "debug.h"
 
-void dplobby_message_free(dplobby_message* message) {
+void dplobbymsg_free(dplobbymsg* message) {
   if (message->data != NULL) free(message->data);
   free(message);
 }
@@ -27,7 +27,7 @@ HRESULT dplobby_run_application(LPDIRECTPLAYLOBBY3A lobby, DWORD* app_id, LPDPLC
   return IDirectPlayLobby_RunApplication(lobby, 0, app_id, connection, event);
 }
 
-HRESULT dplobby_receive_message(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobby_message** out_message) {
+HRESULT dplobby_receive_message(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobbymsg** out_message) {
   DWORD message_flags = 0;
   DWORD data_size = 0;
 
@@ -42,7 +42,7 @@ HRESULT dplobby_receive_message(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobby
   result = IDirectPlayLobby_ReceiveLobbyMessage(lobby, 0, app_id, &message_flags, data, &data_size);
   CHECK("ReceiveLobbyMessage", result);
 
-  dplobby_message* message = calloc(1, sizeof(dplobby_message));
+  dplobbymsg* message = calloc(1, sizeof(dplobbymsg));
   message->flags = message_flags;
   message->data = data;
   message->data_size = data_size;

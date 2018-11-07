@@ -23,7 +23,7 @@ struct session_init {
   char _private[sizeof(struct session_priv)];
 };
 
-typedef BOOL (*session_onmessage)(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobby_message* message);
+typedef BOOL (*session_onmessage)(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobbymsg* message);
 
 struct session_init create_host_session();
 struct session_init create_join_session();

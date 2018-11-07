@@ -85,7 +85,7 @@ HRESULT launch_session(struct session_init* desc) {
 }
 
 BOOL _handle_message(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, session_onmessage callback) {
-  dplobby_message* message = NULL;
+  dplobbymsg* message = NULL;
   HRESULT result = dplobby_receive_message(lobby, app_id, &message);
 
   if (result != DP_OK) {

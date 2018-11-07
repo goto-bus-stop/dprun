@@ -75,14 +75,14 @@ HRESULT parse_address_chunk(char* input, DPCOMPOUNDADDRESSELEMENT** out_address)
   return result;
 }
 
-BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobby_message* message) {
+BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobbymsg* message) {
   printf("Receiving message... %ld\n", message->flags);
   for (int i = 0; i < message->data_size; i++) {
     printf("%02X", ((char*) message->data)[i]);
   }
   printf("\n");
   if (message->flags == DPLMSG_STANDARD) {
-    dplobby_message_free(message);
+    dplobbymsg_free(message);
     return TRUE;
   }
 
@@ -90,7 +90,7 @@ BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobby_message* message
   switch (system_message->dwType) {
     case DPLSYS_APPTERMINATED:
       printf("received APPTERMINATED message\n");
-      dplobby_message_free(message);
+      dplobbymsg_free(message);
       return FALSE;
     case DPLSYS_NEWSESSIONHOST:
       printf("received NEWSESSIONHOST message\n");
@@ -122,7 +122,7 @@ BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobby_message* message
     }
   }
 
-  dplobby_message_free(message);
+  dplobbymsg_free(message);
   return TRUE;
 }
 
