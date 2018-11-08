@@ -5,7 +5,7 @@
 #include "dpwrap.h"
 #include "debug.h"
 
-struct session_priv* session_get_private(session_desc* desc) {
+static struct session_priv* session_get_private(session_desc* desc) {
   return (struct session_priv*) desc->_private;
 }
 
@@ -74,7 +74,7 @@ HRESULT session_launch(session_desc* desc) {
   return result;
 }
 
-BOOL _handle_message(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, session_onmessage callback) {
+static BOOL _handle_message(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, session_onmessage callback) {
   dplobbymsg* message = NULL;
   HRESULT result = dplobby_receive_message(lobby, app_id, &message);
 

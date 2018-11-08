@@ -5,7 +5,7 @@
 
 #ifdef DEBUG
 
-char* get_dp_message (HRESULT hr) {
+static char* get_dp_message (HRESULT hr) {
   switch (hr) {
     case CLASS_E_NOAGGREGATION: return "A non-NULL value was passed for the pUnkOuter parameter in DirectPlayCreate, DirectPlayLobbyCreate, or IDirectPlayLobby2::Connect.";
     case DPERR_ACCESSDENIED: return "The session is full or an incorrect password was supplied.";

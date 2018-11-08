@@ -17,14 +17,14 @@ static struct option long_options[] = {
   {0, 0, 0, 0},
 };
 
-HRESULT parse_guid(char* input, GUID* out_guid) {
+static HRESULT parse_guid(char* input, GUID* out_guid) {
   wchar_t str[39];
   MultiByteToWideChar(CP_ACP, 0, input, -1, str, 39);
   str[38] = L'\0';
   return IIDFromString(str, out_guid);
 }
 
-HRESULT parse_address_chunk(char* input, DPCOMPOUNDADDRESSELEMENT** out_address) {
+static HRESULT parse_address_chunk(char* input, DPCOMPOUNDADDRESSELEMENT** out_address) {
   HRESULT result = DP_OK;
   char* eq = strchr(input, '=');
   char guid_str[60];
@@ -72,7 +72,7 @@ HRESULT parse_address_chunk(char* input, DPCOMPOUNDADDRESSELEMENT** out_address)
   return result;
 }
 
-HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
+static HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
   int opt_index = 0;
   DPCOMPOUNDADDRESSELEMENT* addr_element = NULL;
   while (TRUE) {
@@ -121,7 +121,7 @@ HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
   }
 }
 
-BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobbymsg* message) {
+static BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobbymsg* message) {
   printf("Receiving message... %ld\n", message->flags);
   for (int i = 0; i < message->data_size; i++) {
     printf("%02X", ((char*) message->data)[i]);
