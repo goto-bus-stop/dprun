@@ -17,6 +17,7 @@ release: bin/release/dprun.exe
 
 clean:
 	rm -f $(OBJECTS)
+	rm -f *.plist
 	rm -f bin/debug/dprun.exe bin/release/dprun.exe
 
 .PHONY: all debug release clean
@@ -30,10 +31,13 @@ bin/release:
 	mkdir -p bin/release
 
 bin/debug/dprun.exe: bin/debug $(OBJECTS)
-	$(CC) -Wall -DWIN32_LEAN_AND_MEAN -g -o $@ $(OBJECTS) -static $(LDFLAGS)
+	$(CC) -Wall -DDEBUG -DWIN32_LEAN_AND_MEAN -g -o $@ $(OBJECTS) -static $(LDFLAGS)
 
 bin/release/dprun.exe: bin/release $(OBJECTS)
 	$(CC) -Wall -DWIN32_LEAN_AND_MEAN -O3 -s -o $@ $(OBJECTS) -static $(LDFLAGS)
+
+lint:
+	clang --analyze $(SOURCES) -I./include -I/usr/include/wine/windows/
 
 run: bin/debug/dprun.exe
 	wine bin/debug/dprun.exe

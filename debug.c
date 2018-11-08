@@ -1,5 +1,8 @@
 #include "debug.h"
+#include <stdio.h>
 #include <dplay.h>
+
+#ifdef DEBUG
 
 char* get_dp_message (HRESULT hr) {
   switch (hr) {
@@ -76,3 +79,17 @@ char* get_error_message(HRESULT hr) {
 
   return message;
 }
+
+#else
+
+char* get_error_message(HRESULT hr) {
+  char message[200];
+  sprintf(message, "Error ID #%ld", hr);
+
+  int len = strlen(message);
+  char* mem = calloc(len + 1, sizeof(char));
+  memcpy(mem, message, len + 1);
+  return mem;
+}
+
+#endif

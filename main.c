@@ -58,8 +58,6 @@ HRESULT parse_address_chunk(char* input, DPCOMPOUNDADDRESSELEMENT** out_address)
     data = calloc(1, sizeof(DWORD));
     DWORD num = atoi(&eq[3]);
     memcpy(data, &num, sizeof(DWORD));
-  } else if (eq[1] == 'b' && eq[2] == ':') {
-    // binary data as hex string
   } else {
     data_size = strlen(eq);
     data = calloc(1, data_size);
@@ -89,20 +87,24 @@ HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
         printf("--join and --host may only appear as the first argument\n");
         return 1;
       case 'p':
+        if (optarg == NULL) return 1;
         desc->player_name = optarg;
         break;
       case 'A':
+        if (optarg == NULL) return 1;
         parse_guid(optarg, &desc->application);
         break;
       case 's':
-        if (strcmp(optarg, "IPX")) desc->service_provider = DPSPGUID_IPX;
-        else if (strcmp(optarg, "TCPIP")) desc->service_provider = DPSPGUID_TCPIP;
-        else if (strcmp(optarg, "SERIAL")) desc->service_provider = DPSPGUID_SERIAL;
-        else if (strcmp(optarg, "MODEM")) desc->service_provider = DPSPGUID_MODEM;
+        if (optarg == NULL) return 1;
+        if (strcmp(optarg, "IPX") == 0) desc->service_provider = DPSPGUID_IPX;
+        else if (strcmp(optarg, "TCPIP") == 0) desc->service_provider = DPSPGUID_TCPIP;
+        else if (strcmp(optarg, "SERIAL") == 0) desc->service_provider = DPSPGUID_SERIAL;
+        else if (strcmp(optarg, "MODEM") == 0) desc->service_provider = DPSPGUID_MODEM;
         else parse_guid(optarg, &desc->service_provider);
         dpaddress_create_element(desc->address, DPAID_ServiceProvider, &desc->service_provider, sizeof(GUID));
         break;
       case 'a': {
+        if (optarg == NULL) return 1;
         HRESULT result = parse_address_chunk(optarg, &addr_element);
         if (result != DP_OK) {
           printf("Could not parse address chunk '%s': %s\n", optarg, get_error_message(result));
