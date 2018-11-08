@@ -1,3 +1,4 @@
+#include "shared.h"
 #include "debug.h"
 #include <stdio.h>
 #include <dplay.h>

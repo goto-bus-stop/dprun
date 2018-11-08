@@ -3,7 +3,8 @@
 
 CC = i686-w64-mingw32-gcc
 
-LDFLAGS = -ldxguid -ldplayx -lole32 -luuid
+CFLAGS = -Wall -DWIN32_LEAN_AND_MEAN
+LDFLAGS = -ldplayx -lole32
 
 SOURCES = $(shell find . -name "*.c")
 HEADERS = $(shell find . -name "*.h")
@@ -31,10 +32,10 @@ bin/release:
 	mkdir -p bin/release
 
 bin/debug/dprun.exe: bin/debug $(OBJECTS)
-	$(CC) -Wall -DDEBUG -DWIN32_LEAN_AND_MEAN -g -o $@ $(OBJECTS) -static $(LDFLAGS)
+	$(CC) $(CFLAGS) -DDEBUG -g -o $@ $(OBJECTS) -static $(LDFLAGS)
 
 bin/release/dprun.exe: bin/release $(OBJECTS)
-	$(CC) -Wall -DWIN32_LEAN_AND_MEAN -O3 -s -o $@ $(OBJECTS) -static $(LDFLAGS)
+	$(CC) $(CFLAGS) -O3 -s -o $@ $(OBJECTS) -static $(LDFLAGS)
 
 lint:
 	clang --analyze $(SOURCES) -I./include -I/usr/include/wine/windows/

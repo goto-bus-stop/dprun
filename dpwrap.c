@@ -1,3 +1,4 @@
+#include "shared.h"
 #include <stdio.h>
 #include <dplobby.h>
 #include "dpwrap.h"
