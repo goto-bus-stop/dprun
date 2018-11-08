@@ -4,6 +4,7 @@
 #include <getopt.h>
 #include "session.h"
 #include "debug.h"
+#include "dpsp.h"
 
 static struct option long_options[] = {
   {"host", optional_argument, NULL, 'h'},
@@ -101,6 +102,7 @@ static HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
         else if (strcmp(optarg, "TCPIP") == 0) desc->service_provider = DPSPGUID_TCPIP;
         else if (strcmp(optarg, "SERIAL") == 0) desc->service_provider = DPSPGUID_SERIAL;
         else if (strcmp(optarg, "MODEM") == 0) desc->service_provider = DPSPGUID_MODEM;
+        else if (strcmp(optarg, "DPRUN") == 0) desc->service_provider = DPSPGUID_DPRUN;
         else parse_guid(optarg, &desc->service_provider);
         dpaddress_create_element(desc->address, DPAID_ServiceProvider, &desc->service_provider, sizeof(GUID));
         break;
@@ -218,6 +220,16 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  char use_dprun_sp = IsEqualGUID(&desc.service_provider, &DPSPGUID_DPRUN);
+
+  if (use_dprun_sp) {
+    result = dpsp_register();
+    if (result != DP_OK) {
+      printf("Could not register DPRun service provider: %s\n", get_error_message(result));
+      return 1;
+    }
+  }
+
   result = session_launch(&desc);
   if (result != DP_OK) {
     printf("Fail: %ld\n", result);
@@ -226,6 +238,13 @@ int main(int argc, char** argv) {
       printf("%s\n", message);
     }
     free(message);
+
+    if (use_dprun_sp) {
+      result = dpsp_unregister();
+      if (result != DP_OK) {
+        printf("Could not unregister DPRun service provider: %s\n", get_error_message(result));
+      }
+    }
 
     return 1;
   }
@@ -242,5 +261,17 @@ int main(int argc, char** argv) {
   session_process_messages(&desc, onmessage);
 
   printf("Success!\n");
+
+  if (use_dprun_sp) {
+    result = dpsp_unregister();
+    if (result != DP_OK) {
+      printf("Could not unregister DPRun service provider: %s\n", get_error_message(result));
+    }
+  }
+
   return 0;
+}
+
+__declspec(dllexport) HRESULT SPInit(SPINITDATA* data) {
+  return dpsp_init(data);
 }
