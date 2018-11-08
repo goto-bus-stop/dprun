@@ -271,7 +271,3 @@ int main(int argc, char** argv) {
 
   return 0;
 }
-
-__declspec(dllexport) HRESULT SPInit(SPINITDATA* data) {
-  return dpsp_init(data);
-}

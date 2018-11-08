@@ -9,6 +9,7 @@ LDFLAGS = -ldplayx -lole32
 SOURCES = $(shell find . -name "*.c")
 HEADERS = $(shell find . -name "*.h")
 OBJECTS = $(SOURCES:.c=.o)
+DLL_OBJECTS = dpsp.o dll.o
 
 all: bin/debug/dprun.exe bin/release/dprun.exe
 	@echo "Sizes:"
@@ -31,10 +32,14 @@ bin/debug:
 bin/release:
 	mkdir -p bin/release
 
-bin/debug/dprun.exe: bin/debug $(OBJECTS)
-	$(CC) $(CFLAGS) -DDEBUG -g -o $@ $(OBJECTS) -static $(LDFLAGS)
+bin/debug/dprun.dll: bin/debug $(DLL_OBJECTS)
+	$(CC) $(CFLAGS) -DDEBUG -g -shared -o $@ $(DLL_OBJECTS) $(LDFLAGS)
+bin/debug/dprun.exe: bin/debug/dprun.dll $(OBJECTS)
+	$(CC) $(CFLAGS) -DDEBUG -g -o $@ $(OBJECTS) $(LDFLAGS)
 
-bin/release/dprun.exe: bin/release $(OBJECTS)
+bin/release/dprun.dll: bin/release $(DLL_OBJECTS)
+	$(CC) $(CFLAGS) -O3 -s -shared -o $@ $(DLL_OBJECTS) $(LDFLAGS)
+bin/release/dprun.exe: bin/release/dprun.dll $(OBJECTS)
 	$(CC) $(CFLAGS) -O3 -s -o $@ $(OBJECTS) -static $(LDFLAGS)
 
 lint:

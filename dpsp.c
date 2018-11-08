@@ -2,6 +2,8 @@
 #include "dpsp.h"
 #include <stdio.h>
 
+static FILE* dbglog;
+
 /**
  * Code below here executes in the host application.
  */
@@ -11,6 +13,10 @@ static const char* REG_DPRUN = "Software\\Microsoft\\DirectPlay\\Service Provide
 static char g_dprun_path[MAX_PATH] = {0};
 static char* get_dprun_path() {
   GetModuleFileName(NULL, g_dprun_path, MAX_PATH);
+  // dprun.exe → dprun.dll
+  // TODO try to make directplay call into the exe instead…
+  int end = strlen(g_dprun_path);
+  memcpy(&g_dprun_path[end - 4], ".dll", 3);
   return g_dprun_path;
 }
 
@@ -44,6 +50,9 @@ HRESULT dpsp_register() {
   if (result == ERROR_SUCCESS) result = RegSetValueEx(dprun_key, "DescriptionW", 0, REG_SZ, (void*)dprun_desc, strlen(dprun_desc) + 1);
   if (result == ERROR_SUCCESS) result = RegSetValueEx(dprun_key, "Guid", 0, REG_SZ, (void*)dprun_guid, strlen(dprun_guid) + 1);
   if (result == ERROR_SUCCESS) result = RegSetValueEx(dprun_key, "Path", 0, REG_SZ, (void*)dprun_path, strlen(dprun_path) + 1);
+  DWORD val = 0;
+  if (result == ERROR_SUCCESS) result = RegSetValueEx(dprun_key, "dwReserved1", 0, REG_DWORD, (void*)&val, sizeof(val));
+  if (result == ERROR_SUCCESS) result = RegSetValueEx(dprun_key, "dwReserved2", 0, REG_DWORD, (void*)&val, sizeof(val));
 
   if (result != ERROR_SUCCESS) {
     return HRESULT_FROM_WIN32(result);
@@ -71,11 +80,11 @@ HRESULT dpsp_unregister() {
  */
 
 static HRESULT emit(const char* method, void* data, DWORD data_size) {
-  printf("Emit(%s): ", method);
+  fprintf(dbglog, "Emit(%s): ", method);
   for (int i = 0; i < data_size; i++) {
-    printf("%02X", ((char*)data)[i]);
+    fprintf(dbglog, "%02X", ((char*)data)[i]);
   }
-  printf("\n");
+  fprintf(dbglog, "\n");
   return DPERR_UNSUPPORTED;
 }
 
@@ -126,9 +135,23 @@ static HRESULT WINAPI callback_GetMessageQueue(DPSP_GETMESSAGEQUEUEDATA* data) {
 }
 
 HRESULT dpsp_init(SPINITDATA* init_data) {
+  dbglog = fopen("dprun_log.txt", "w");
+  wchar_t* gotguid;
+  wchar_t* selfguid;
+  StringFromIID(init_data->lpGuid, &gotguid);
+  StringFromIID(&DPSPGUID_DPRUN, &selfguid);
+  fprintf(dbglog, "guid: %S %S\n", gotguid, selfguid);
+  CoTaskMemFree(gotguid); CoTaskMemFree(selfguid);
+
   if (!IsEqualGUID(init_data->lpGuid, &DPSPGUID_DPRUN)) {
+    fprintf(dbglog, "not equal\n");
     return DPERR_UNAVAILABLE;
   }
+
+  fprintf(dbglog, "equal\n");
+
+  init_data->dwSPHeaderSize = 0;
+  init_data->dwSPVersion = DPSP_MAJORVERSIONMASK & DPSP_MAJORVERSION;
 
   init_data->lpCB->EnumSessions = callback_EnumSessions;
   init_data->lpCB->Reply = callback_Reply;
