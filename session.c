@@ -1,47 +1,34 @@
 #include <stdio.h>
 #include <dplobby.h>
-#include "host_session.h"
+#include "session.h"
 #include "dpwrap.h"
 #include "debug.h"
 
-struct session_priv* get_private(struct session_init* desc) {
+struct session_priv* session_get_private(session_desc* desc) {
   return (struct session_priv*) desc->_private;
 }
 
-void init_session(struct session_init* desc) {
+static void session_init(session_desc* desc) {
   dpaddress_create(&desc->address);
-  get_private(desc)->dplobby = NULL;
-  get_private(desc)->app_id = 0;
-  get_private(desc)->message_event = CreateEvent(NULL, FALSE, FALSE, NULL);
+  session_get_private(desc)->dplobby = NULL;
+  session_get_private(desc)->app_id = 0;
+  session_get_private(desc)->message_event = CreateEvent(NULL, FALSE, FALSE, NULL);
 }
 
-struct session_init create_host_session() {
-  struct session_init desc = {
+session_desc session_create() {
+  session_desc desc = {
     .player_name = NULL,
     .session_id = GUID_NULL,
     .application = GUID_NULL,
     .service_provider = GUID_NULL,
   };
 
-  init_session(&desc);
+  session_init(&desc);
 
   return desc;
 }
 
-struct session_init create_join_session(GUID session_id) {
-  struct session_init desc = {
-    .player_name = NULL,
-    .session_id = session_id,
-    .application = GUID_NULL,
-    .service_provider = GUID_NULL,
-  };
-
-  init_session(&desc);
-
-  return desc;
-}
-
-HRESULT launch_session(struct session_init* desc) {
+HRESULT session_launch(session_desc* desc) {
   LPDIRECTPLAYLOBBY3A lobby = NULL;
   DWORD app_id;
   LPDPNAME dp_player_name = NULL;
@@ -73,15 +60,15 @@ HRESULT launch_session(struct session_init* desc) {
 
   desc->session_id = dp_session_desc->guidInstance;
 
-  get_private(desc)->dplobby = lobby;
-  get_private(desc)->app_id = app_id;
-  get_private(desc)->message_event = event;
+  session_get_private(desc)->dplobby = lobby;
+  session_get_private(desc)->app_id = app_id;
+  session_get_private(desc)->message_event = event;
 
   // TODO also clean up when errors happen
   if (dp_connection != NULL) free(dp_connection);
   if (dp_session_desc != NULL) free(dp_session_desc);
   if (dp_player_name != NULL) free(dp_player_name);
-  // TODO free dpaddress from session_init maybe
+  // TODO free dpaddress from session_desc maybe
 
   return result;
 }
@@ -100,8 +87,8 @@ BOOL _handle_message(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, session_onmessage 
   return callback(lobby, app_id, message);
 }
 
-HRESULT process_session_messages(struct session_init* desc, session_onmessage callback) {
-  struct session_priv* data = get_private(desc);
+HRESULT session_process_messages(session_desc* desc, session_onmessage callback) {
+  struct session_priv* data = session_get_private(desc);
 
   printf("App: %ld\n", data->app_id);
 

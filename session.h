@@ -12,7 +12,7 @@ struct session_priv {
   HANDLE message_event;
 };
 
-struct session_init {
+typedef struct session_desc {
   // Public config
   char* player_name;
   GUID session_id;
@@ -21,11 +21,10 @@ struct session_init {
   dpaddress* address;
   // Don't touch dis
   char _private[sizeof(struct session_priv)];
-};
+} session_desc;
 
 typedef BOOL (*session_onmessage)(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobbymsg* message);
 
-struct session_init create_host_session();
-struct session_init create_join_session();
-HRESULT launch_session(struct session_init* desc);
-HRESULT process_session_messages(struct session_init* desc, session_onmessage callback);
+struct session_desc session_create();
+HRESULT session_launch(session_desc* desc);
+HRESULT session_process_messages(session_desc* desc, session_onmessage callback);

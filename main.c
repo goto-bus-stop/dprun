@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <getopt.h>
-#include "host_session.h"
+#include "session.h"
 #include "debug.h"
 
 static struct option long_options[] = {
@@ -73,6 +73,51 @@ HRESULT parse_address_chunk(char* input, DPCOMPOUNDADDRESSELEMENT** out_address)
   return result;
 }
 
+HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
+  int opt_index = 0;
+  DPCOMPOUNDADDRESSELEMENT* addr_element = NULL;
+  while (TRUE) {
+    if (addr_element != NULL) {
+      free(addr_element);
+      addr_element = NULL;
+    }
+    switch (getopt_long(argc, argv, "hj:p:A:n:q:s:", long_options, &opt_index)) {
+      case -1:
+        // Done.
+        return DP_OK;
+      case 'j': case 'h':
+        printf("--join and --host may only appear as the first argument\n");
+        return 1;
+      case 'p':
+        desc->player_name = optarg;
+        break;
+      case 'A':
+        parse_guid(optarg, &desc->application);
+        break;
+      case 's':
+        if (strcmp(optarg, "IPX")) desc->service_provider = DPSPGUID_IPX;
+        else if (strcmp(optarg, "TCPIP")) desc->service_provider = DPSPGUID_TCPIP;
+        else if (strcmp(optarg, "SERIAL")) desc->service_provider = DPSPGUID_SERIAL;
+        else if (strcmp(optarg, "MODEM")) desc->service_provider = DPSPGUID_MODEM;
+        else parse_guid(optarg, &desc->service_provider);
+        dpaddress_create_element(desc->address, DPAID_ServiceProvider, &desc->service_provider, sizeof(GUID));
+        break;
+      case 'a': {
+        HRESULT result = parse_address_chunk(optarg, &addr_element);
+        if (result != DP_OK) {
+          printf("Could not parse address chunk '%s': %s\n", optarg, get_error_message(result));
+          return result;
+        }
+        dpaddress_add(desc->address, addr_element);
+        break;
+      }
+      default:
+        printf("Unknown argument '%s'\n", long_options[opt_index].name);
+        return 1;
+    }
+  }
+}
+
 BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobbymsg* message) {
   printf("Receiving message... %ld\n", message->flags);
   for (int i = 0; i < message->data_size; i++) {
@@ -124,53 +169,8 @@ BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobbymsg* message) {
   return TRUE;
 }
 
-HRESULT parse_cli_args(int argc, char** argv, struct session_init* desc) {
-  int opt_index = 0;
-  DPCOMPOUNDADDRESSELEMENT* addr_element = NULL;
-  while (TRUE) {
-    if (addr_element != NULL) {
-      free(addr_element);
-      addr_element = NULL;
-    }
-    switch (getopt_long(argc, argv, "hj:p:A:n:q:s:", long_options, &opt_index)) {
-      case -1:
-        // Done.
-        return DP_OK;
-      case 'j': case 'h':
-        printf("--join and --host may only appear as the first argument\n");
-        return 1;
-      case 'p':
-        desc->player_name = optarg;
-        break;
-      case 'A':
-        parse_guid(optarg, &desc->application);
-        break;
-      case 's':
-        if (strcmp(optarg, "IPX")) desc->service_provider = DPSPGUID_IPX;
-        else if (strcmp(optarg, "TCPIP")) desc->service_provider = DPSPGUID_TCPIP;
-        else if (strcmp(optarg, "SERIAL")) desc->service_provider = DPSPGUID_SERIAL;
-        else if (strcmp(optarg, "MODEM")) desc->service_provider = DPSPGUID_MODEM;
-        else parse_guid(optarg, &desc->service_provider);
-        dpaddress_create_element(desc->address, DPAID_ServiceProvider, &desc->service_provider, sizeof(GUID));
-        break;
-      case 'a': {
-        HRESULT result = parse_address_chunk(optarg, &addr_element);
-        if (result != DP_OK) {
-          printf("Could not parse address chunk '%s': %s\n", optarg, get_error_message(result));
-          return result;
-        }
-        dpaddress_add(desc->address, addr_element);
-        break;
-      }
-      default:
-        printf("Unknown argument '%s'\n", long_options[opt_index].name);
-        return 1;
-    }
-  }
-}
-
 int main(int argc, char** argv) {
-  struct session_init desc = {0};
+  session_desc desc = session_create();
   int opt_index = 0;
   switch (getopt_long(argc, argv, "hj:p:A:n:q:s:", long_options, &opt_index)) {
     case 'j': {
@@ -179,11 +179,10 @@ int main(int argc, char** argv) {
         printf("--join got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
         return 1;
       }
-      desc = create_join_session(guid);
+      desc.session_id = guid;
       break;
     }
     case 'h':
-      desc = create_host_session();
       if (optarg != NULL) {
         if (parse_guid(optarg, &desc.session_id) != S_OK) {
           printf("--host got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
@@ -216,7 +215,7 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  result = launch_session(&desc);
+  result = session_launch(&desc);
   if (result != DP_OK) {
     printf("Fail: %ld\n", result);
     char* message = get_error_message(result);
@@ -237,7 +236,7 @@ int main(int argc, char** argv) {
   printf("launched session %s\n", session_id);
   free(session_id);
 
-  process_session_messages(&desc, onmessage);
+  session_process_messages(&desc, onmessage);
 
   printf("Success!\n");
   return 0;

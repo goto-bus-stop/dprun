@@ -5,14 +5,55 @@
  */
 
 typedef struct dpaddress {
+  // Array of elements in this address.
   DPCOMPOUNDADDRESSELEMENT* elements;
+  // Amount of elements in this address.
   DWORD num_elements;
 } dpaddress;
 
+/**
+ * Create an address element.
+ *
+ * @param data_type The address element data type.
+ * @param data The address element value.
+ * @param data_size Size of the address element value.
+ * @param out_element Pointer to a DPCOMPOUNDADDRESSELEMENT pointer, which will be filled with the created address element. The user is responsible for freeing this memory.
+ */
 HRESULT dpaddrelement_create(GUID data_type, void* data, DWORD data_size, DPCOMPOUNDADDRESSELEMENT** out_element);
+
+/**
+ * Create an empty DirectPlay address.
+ *
+ * @param out_address Pointer to a dpaddress pointer, which will be filled with the created address. The user is responsible for freeing this memory.
+ */
 HRESULT dpaddress_create(dpaddress** out_address);
+
+/**
+ * Add an element to a DirectPlay address.
+ *
+ * @param address The dpaddress.
+ * @param element The element to add. This element is copied into the address; the element memory can be freed if you are no longer using it.
+ */
 HRESULT dpaddress_add(dpaddress* address, DPCOMPOUNDADDRESSELEMENT* element);
+
+/**
+ * Create and add an element to a DirectPlay address.
+ * Convenience wrapper around dpaddrelement_create and dpaddress_add that saves some memory juggling.
+ *
+ * @param address The dpaddress.
+ * @param data_type The address element data type.
+ * @param data The address element value.
+ * @param data_size Size of the address element value.
+ */
 HRESULT dpaddress_create_element(dpaddress* address, GUID data_type, void* data, DWORD data_size);
+
+/**
+ * Finish the DirectPlay address and return values that can be assigned to the DirectPlay API directly.
+ *
+ * @param address The dpaddress.
+ * @param out_elements Pointer to a memory pointer that will be filled with the address data.
+ * @param out_size Pointer to a DWORD that will be filled with the data size.
+ */
 HRESULT dpaddress_finish(dpaddress* address, void** out_elements, DWORD* out_size);
 
 typedef struct dplobbymsg {
@@ -20,6 +61,7 @@ typedef struct dplobbymsg {
   void* data;
   DWORD data_size;
 } dplobbymsg;
+
 void dplobbymsg_free(dplobbymsg* message);
 
 HRESULT dplobby_create(LPDIRECTPLAYLOBBY3A* out_lobby);

@@ -6,6 +6,7 @@ CC = i686-w64-mingw32-gcc
 LDFLAGS = -ldxguid -ldplayx -lole32 -luuid
 
 SOURCES = $(shell find . -name "*.c")
+HEADERS = $(shell find . -name "*.h")
 OBJECTS = $(SOURCES:.c=.o)
 
 all: bin/debug/dprun.exe bin/release/dprun.exe
@@ -20,7 +21,7 @@ clean:
 
 .PHONY: all debug release clean
 
-%.o: %.c
+%.o: %.c $(HEADERS)
 	$(CC) -c -Wall -g -I./include $< -o $@
 
 bin/debug:
