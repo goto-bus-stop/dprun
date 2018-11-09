@@ -19,6 +19,7 @@ typedef struct session_desc {
   GUID application;
   GUID service_provider;
   dpaddress* address;
+  char is_host;
   // Don't touch dis
   char _private[sizeof(struct session_priv)];
 } session_desc;

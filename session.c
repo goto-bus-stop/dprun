@@ -50,7 +50,7 @@ HRESULT session_launch(session_desc* desc) {
 
   result = dpconn_create(dp_session_desc, dp_player_name, &dp_connection);
   CHECK("dpconn_create", result);
-  dpconn_set_host(dp_connection, TRUE);
+  dpconn_set_host(dp_connection, desc->is_host);
   dpconn_set_service_provider(dp_connection, desc->service_provider);
 
   result = dpaddress_finish(desc->address, &dp_connection->lpAddress, &dp_connection->dwAddressSize);
@@ -78,7 +78,7 @@ static BOOL _handle_message(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, session_onm
   dplobbymsg* message = NULL;
   HRESULT result = dplobby_receive_message(lobby, app_id, &message);
 
-  if (result != DP_OK) {
+  if (FAILED(result)) {
     return FALSE;
   }
   if (message == NULL) {

@@ -25,6 +25,25 @@ static HRESULT parse_guid(char* input, GUID* out_guid) {
   return IIDFromString(str, out_guid);
 }
 
+static void print_address(dpaddress* addr) {
+  printf("address:\n");
+  for (int i = 0; i < addr->num_elements; i++) {
+    DPCOMPOUNDADDRESSELEMENT el = addr->elements[i];
+    wchar_t* guid = NULL;
+    char data[100];
+    StringFromIID(&el.guidDataType, &guid);
+    if (el.dwDataSize < 100) {
+      memcpy(data, el.lpData, el.dwDataSize);
+      data[el.dwDataSize] = '\0';
+    } else {
+      memcpy(data, el.lpData, 99);
+      data[99] = '\0';
+    }
+    printf("  %S - %s\n", guid, data);
+    free(guid);
+  }
+}
+
 static HRESULT parse_address_chunk(char* input, DPCOMPOUNDADDRESSELEMENT** out_address) {
   HRESULT result = DP_OK;
   char* eq = strchr(input, '=');
@@ -66,7 +85,7 @@ static HRESULT parse_address_chunk(char* input, DPCOMPOUNDADDRESSELEMENT** out_a
     memcpy(data, &eq[1], data_size - 1);
   }
 
-  if (result == DP_OK) {
+  if (SUCCEEDED(result)) {
     result = dpaddrelement_create(data_type, data, data_size, out_address);
   }
 
@@ -109,7 +128,7 @@ static HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
       case 'a': {
         if (optarg == NULL) return 1;
         HRESULT result = parse_address_chunk(optarg, &addr_element);
-        if (result != DP_OK) {
+        if (FAILED(result)) {
           printf("Could not parse address chunk '%s': %s\n", optarg, get_error_message(result));
           return result;
         }
@@ -184,10 +203,12 @@ int main(int argc, char** argv) {
         printf("--join got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
         return 1;
       }
+      desc.is_host = FALSE;
       desc.session_id = guid;
       break;
     }
     case 'h':
+      desc.is_host = TRUE;
       if (optarg != NULL) {
         if (parse_guid(optarg, &desc.session_id) != S_OK) {
           printf("--host got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
@@ -203,7 +224,7 @@ int main(int argc, char** argv) {
   }
 
   HRESULT result = parse_cli_args(argc, argv, &desc);
-  if (result != DP_OK) {
+  if (FAILED(result)) {
     return 1;
   }
 
@@ -224,14 +245,16 @@ int main(int argc, char** argv) {
 
   if (use_dprun_sp) {
     result = dpsp_register();
-    if (result != DP_OK) {
+    if (FAILED(result)) {
       printf("Could not register DPRun service provider: %s\n", get_error_message(result));
       return 1;
     }
   }
 
+  print_address(desc.address);
+
   result = session_launch(&desc);
-  if (result != DP_OK) {
+  if (FAILED(result)) {
     printf("Fail: %ld\n", result);
     char* message = get_error_message(result);
     if (message != NULL) {
@@ -241,7 +264,7 @@ int main(int argc, char** argv) {
 
     if (use_dprun_sp) {
       result = dpsp_unregister();
-      if (result != DP_OK) {
+      if (FAILED(result)) {
         printf("Could not unregister DPRun service provider: %s\n", get_error_message(result));
       }
     }
@@ -256,6 +279,9 @@ int main(int argc, char** argv) {
   for (int i = 1; i < 38; i++) session_id[i] = session_id[2 * i];
   session_id[38] = '\0';
   printf("launched session %s\n", session_id);
+  FILE* dbg_sessid = fopen("dbg_sessid.txt", "w");
+  fwrite((void*)session_id, 38, 1, dbg_sessid);
+  fclose(dbg_sessid);
   free(session_id);
 
   session_process_messages(&desc, onmessage);
@@ -264,7 +290,7 @@ int main(int argc, char** argv) {
 
   if (use_dprun_sp) {
     result = dpsp_unregister();
-    if (result != DP_OK) {
+    if (FAILED(result)) {
       printf("Could not unregister DPRun service provider: %s\n", get_error_message(result));
     }
   }

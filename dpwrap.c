@@ -177,7 +177,7 @@ HRESULT dpaddress_add(dpaddress* address, DPCOMPOUNDADDRESSELEMENT* element) {
 HRESULT dpaddress_create_element(dpaddress* address, GUID data_type, void* data, DWORD data_size) {
   DPCOMPOUNDADDRESSELEMENT* element = NULL;
   HRESULT result = dpaddrelement_create(data_type, data, data_size, &element);
-  if (result == DP_OK) {
+  if (SUCCEEDED(result)) {
     result = dpaddress_add(address, element);
   }
   if (element != NULL) {
