@@ -55,6 +55,7 @@ HRESULT dpsp_register() {
   DWORD val = 0;
   if (result == ERROR_SUCCESS) result = RegSetValueEx(dprun_key, "dwReserved1", 0, REG_DWORD, (void*)&val, sizeof(val));
   if (result == ERROR_SUCCESS) result = RegSetValueEx(dprun_key, "dwReserved2", 0, REG_DWORD, (void*)&val, sizeof(val));
+  if (result == ERROR_SUCCESS) result = RegSetValueEx(dprun_key, "Private", 0, REG_DWORD, (void*)&val, sizeof(val));
 
   if (FAILED(result)) {
     return HRESULT_FROM_WIN32(result);
