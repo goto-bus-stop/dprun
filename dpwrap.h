@@ -51,10 +51,11 @@ HRESULT dpaddress_create_element(dpaddress* address, GUID data_type, void* data,
  * Finish the DirectPlay address and return values that can be assigned to the DirectPlay API directly.
  *
  * @param address The dpaddress.
+ * @param lobby
  * @param out_elements Pointer to a memory pointer that will be filled with the address data.
  * @param out_size Pointer to a DWORD that will be filled with the data size.
  */
-HRESULT dpaddress_finish(dpaddress* address, void** out_elements, DWORD* out_size);
+HRESULT dpaddress_finish(dpaddress* address, LPDIRECTPLAYLOBBY3A lobby, void** out_elements, DWORD* out_size);
 
 typedef struct dplobbymsg {
   DWORD flags;

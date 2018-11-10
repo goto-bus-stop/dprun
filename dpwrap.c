@@ -186,8 +186,32 @@ HRESULT dpaddress_create_element(dpaddress* address, GUID data_type, void* data,
   return result;
 }
 
-HRESULT dpaddress_finish(dpaddress* address, void** out_elements, DWORD* out_size) {
-  *out_size = address->num_elements;
-  *out_elements = address->elements;
+HRESULT dpaddress_finish(dpaddress* address, LPDIRECTPLAYLOBBY3A lobby, void** out_elements, DWORD* out_size) {
+  DWORD size = 0;
+  HRESULT result = IDirectPlayLobby_CreateCompoundAddress(
+      lobby,
+      address->elements,
+      address->num_elements,
+      NULL,
+      &size);
+  if (result != DPERR_BUFFERTOOSMALL) {
+    return result;
+  }
+
+  void* data = malloc(size);
+  result = IDirectPlayLobby_CreateCompoundAddress(
+      lobby,
+      address->elements,
+      address->num_elements,
+      data,
+      &size);
+
+  if (result != DP_OK) {
+    return result;
+  }
+
+  *out_elements = data;
+  *out_size = size;
+
   return DP_OK;
 }

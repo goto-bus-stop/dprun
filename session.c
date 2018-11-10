@@ -53,7 +53,7 @@ HRESULT session_launch(session_desc* desc) {
   dpconn_set_host(dp_connection, desc->is_host);
   dpconn_set_service_provider(dp_connection, desc->service_provider);
 
-  result = dpaddress_finish(desc->address, &dp_connection->lpAddress, &dp_connection->dwAddressSize);
+  result = dpaddress_finish(desc->address, lobby, &dp_connection->lpAddress, &dp_connection->dwAddressSize);
   CHECK("dpaddress_finish", result);
 
   result = dplobby_run_application(lobby, &app_id, dp_connection, event);
