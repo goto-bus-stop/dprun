@@ -7,8 +7,9 @@
 #include "dpsp.h"
 
 static struct option long_options[] = {
-  {"host", optional_argument, NULL, 'h'},
-  {"join", required_argument, NULL, 'j'},
+  {"help", no_argument, NULL, 'h'},
+  {"host", optional_argument, NULL, 'H'},
+  {"join", required_argument, NULL, 'J'},
   {"player", required_argument, NULL, 'p'},
   {"address", required_argument, NULL, 'a'},
   {"application", required_argument, NULL, 'A'},
@@ -17,6 +18,43 @@ static struct option long_options[] = {
   {"service-provider", required_argument, NULL, 's'},
   {0, 0, 0, 0},
 };
+
+static const char* help_text =
+  "dprun <--host|--join> [options]\n"
+  "\n"
+  "-H, --host [session]\n"
+  "    Host a DirectPlay session.\n"
+  "    [session] is optional, and can contain a GUID that will be used as the session instance ID.\n"
+  "    If omitted, a random GUID is generated.\n"
+  "-J, --join [session]\n"
+  "    Join a DirectPlay session.\n"
+  "    [session] is the GUID for the session.\n"
+  "\n"
+  "Options:\n"
+  "  -p, --player [name]\n"
+  "      The name of the local player (required).\n"
+  "  -s, --service-provider [guid]\n"
+  "      The GUID of the service provider to use (required).\n"
+  "      This field also supports constant values: TCPIP, IPX, SERIAL, MODEM, DPRUN\n"
+  "  -A, --application [guid]\n"
+  "      The GUID of the application to start (required).\n"
+  "\n"
+  "  -a, --address [key]=[value]\n"
+  "      Add an address part. This flag can appear more than once.\n"
+  "      The [value] is the string value of the address part.\n"
+  "      To specify a numeric value, use \"i:12345\".\n"
+  "      To specify a binary value, use \"b:[hex encoded value]\", for example \"b:DEADBEEF\".\n"
+  "      The [key] field is the GUID for the address data type. It also supports constant values:\n"
+  "          TotalSize, ServiceProvider, LobbyProvider, Phone, PhoneW,\n"
+  "          Modem, ModemW, INet, INetW, INetPort, ComPort\n"
+  "  -n, --session-name [name]\n"
+  "      The name of the session to host or join (optional).\n"
+  "  -q, --session-password [password]\n"
+  "      The password for the session to host or join (optional).\n"
+  "\n"
+  "GUIDs passed to dprun must be formatted like below, including braces and dashes:\n"
+  "    {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n"
+  "    {685BC400-9D2C-11cf-A9CD-00AA006886E3}\n";
 
 static HRESULT parse_guid(char* input, GUID* out_guid) {
   wchar_t str[39];
@@ -100,11 +138,11 @@ static HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
       free(addr_element);
       addr_element = NULL;
     }
-    switch (getopt_long(argc, argv, "hj:p:A:n:q:s:", long_options, &opt_index)) {
+    switch (getopt_long(argc, argv, "Hj:p:A:n:q:s:", long_options, &opt_index)) {
       case -1:
         // Done.
         return DP_OK;
-      case 'j': case 'h':
+      case 'J': case 'H':
         printf("--join and --host may only appear as the first argument\n");
         return 1;
       case 'p':
@@ -197,7 +235,7 @@ int main(int argc, char** argv) {
   session_desc desc = session_create();
   int opt_index = 0;
   switch (getopt_long(argc, argv, "hj:p:A:n:q:s:", long_options, &opt_index)) {
-    case 'j': {
+    case 'J': {
       GUID guid = GUID_NULL;
       if (strlen(optarg) != 38 || parse_guid(optarg, &guid) != S_OK) {
         printf("--join got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
@@ -207,7 +245,7 @@ int main(int argc, char** argv) {
       desc.session_id = guid;
       break;
     }
-    case 'h':
+    case 'H':
       desc.is_host = TRUE;
       if (optarg != NULL) {
         if (parse_guid(optarg, &desc.session_id) != S_OK) {
@@ -218,6 +256,9 @@ int main(int argc, char** argv) {
         CoCreateGuid(&desc.session_id);
       }
       break;
+    case 'h':
+      printf(help_text);
+      return 0;
     default:
       printf("must provide --join or --host as the first argument\n");
       return 1;
