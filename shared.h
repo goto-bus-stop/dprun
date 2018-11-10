@@ -3,3 +3,5 @@
 #define INITGUID
 
 static const GUID GUID_NULL = {0, 0, 0, {0, 0, 0, 0}};
+
+#define DPRUN_VERSION 0

@@ -1,6 +1,8 @@
 #include "shared.h"
+#include "debug.h"
 #include "dpsp.h"
 #include <stdio.h>
+#include <time.h>
 
 #define DPSP_HEADER_SIZE 20
 
@@ -104,7 +106,7 @@ static HRESULT WINAPI callback_Send(DPSP_SENDDATA* data) {
 }
 
 static HRESULT WINAPI callback_CreatePlayer(DPSP_CREATEPLAYERDATA* data) {
-  return emit("CreatePlayeer", data, sizeof(DPSP_CREATEPLAYERDATA));
+  return emit("CreatePlayer", data, sizeof(DPSP_CREATEPLAYERDATA));
 }
 
 static HRESULT WINAPI callback_DeletePlayer(DPSP_DELETEPLAYERDATA* data) {
@@ -122,7 +124,7 @@ static HRESULT WINAPI callback_GetCaps(DPSP_GETCAPSDATA* data) {
     return DPERR_INVALIDPARAMS;
   }
 
-  data->lpCaps->dwFlags = DPCAPS_ASYNCSUPPORTED;
+  data->lpCaps->dwFlags = 0;
   data->lpCaps->dwMaxBufferSize = 1024;
   data->lpCaps->dwMaxQueueSize = 0;
   data->lpCaps->dwMaxPlayers = 65536;
@@ -170,33 +172,82 @@ static HRESULT WINAPI callback_GetMessageQueue(DPSP_GETMESSAGEQUEUEDATA* data) {
   return emit("GetMessageQueue", data, sizeof(DPSP_GETMESSAGEQUEUEDATA));
 }
 
-HRESULT dpsp_init(SPINITDATA* init_data) {
-  dbglog = fopen("dprun_log.txt", "w");
+struct sp_connect_data {
+  char host_ip[16];
+  char host_port[6];
+};
 
+BOOL WINAPI parse_address(REFGUID data_type, DWORD data_size, LPCVOID data, LPVOID context);
+
+FILE* create_dbglog() {
+#ifdef USE_TIMED_DBGLOG
+  char timestr[60];
+  time_t t; time(&t);
+  struct tm* nf = localtime(&t);
+  strftime(timestr, 60, "%Y-%m-%d_%H-%M-%S", nf);
+  char dbgname[MAX_PATH];
+  sprintf(dbgname, "dprun_log_%s.txt", timestr);
+#else
+  char* dbgname = "dprun_log.txt";
+#endif
+  return fopen(dbgname, "w");
+}
+
+HRESULT dpsp_init(SPINITDATA* init_data) {
   if (!IsEqualGUID(init_data->lpGuid, &DPSPGUID_DPRUN)) {
     return DPERR_UNAVAILABLE;
   }
 
+  dbglog = create_dbglog();
+
   fprintf(dbglog, "SPInit\n");
 
   init_data->dwSPHeaderSize = DPSP_HEADER_SIZE;
-  init_data->dwSPVersion = DPSP_MAJORVERSIONMASK & DPSP_MAJORVERSION;
+  init_data->dwSPVersion = (DPSP_MAJORVERSIONMASK & DPSP_MAJORVERSION) | DPRUN_VERSION;
 
-  init_data->lpCB->EnumSessions = &callback_EnumSessions;
-  init_data->lpCB->Reply = &callback_Reply;
-  init_data->lpCB->Send = &callback_Send;
-  init_data->lpCB->CreatePlayer = &callback_CreatePlayer;
-  init_data->lpCB->DeletePlayer = &callback_DeletePlayer;
-  init_data->lpCB->GetAddress = &callback_GetAddress;
-  init_data->lpCB->GetCaps = &callback_GetCaps;
-  init_data->lpCB->Open = &callback_Open;
-  init_data->lpCB->CloseEx = &callback_CloseEx;
-  init_data->lpCB->ShutdownEx = &callback_ShutdownEx;
-  init_data->lpCB->GetAddressChoices = &callback_GetAddressChoices;
-  init_data->lpCB->SendEx = &callback_SendEx;
-  init_data->lpCB->SendToGroupEx = &callback_SendToGroupEx;
-  init_data->lpCB->Cancel = &callback_Cancel;
-  init_data->lpCB->GetMessageQueue = &callback_GetMessageQueue;
+  init_data->lpCB->EnumSessions = callback_EnumSessions;
+  init_data->lpCB->Reply = callback_Reply;
+  init_data->lpCB->Send = callback_Send;
+  init_data->lpCB->CreatePlayer = callback_CreatePlayer;
+  init_data->lpCB->DeletePlayer = callback_DeletePlayer;
+  init_data->lpCB->GetAddress = callback_GetAddress;
+  init_data->lpCB->GetCaps = callback_GetCaps;
+  init_data->lpCB->Open = callback_Open;
+  init_data->lpCB->CloseEx = callback_CloseEx;
+  init_data->lpCB->ShutdownEx = callback_ShutdownEx;
+  init_data->lpCB->GetAddressChoices = callback_GetAddressChoices;
+  init_data->lpCB->SendEx = callback_SendEx;
+  init_data->lpCB->SendToGroupEx = callback_SendToGroupEx;
+  init_data->lpCB->Cancel = callback_Cancel;
+  init_data->lpCB->GetMessageQueue = callback_GetMessageQueue;
+
+  // These are not defined by dpwsockx so it's
+  // probably fine to not have them
+  init_data->lpCB->GetAddressChoices = NULL;
+  init_data->lpCB->SendEx = NULL;
+  init_data->lpCB->SendToGroupEx = NULL;
+  init_data->lpCB->Cancel = NULL;
+
+  struct sp_connect_data* address_data = calloc(1, sizeof(struct sp_connect_data));
+  HRESULT hr = IDirectPlaySP_EnumAddress(init_data->lpISP, parse_address, init_data->lpAddress, init_data->dwAddressSize, address_data);
+
+  if (FAILED(hr)) {
+    fprintf(dbglog, "enumaddress failed: %s\n", get_error_message(hr));
+    return hr;
+  }
+
+  fprintf(dbglog, "address: %s:%s (from %ld)\n", address_data->host_ip, address_data->host_port, init_data->dwAddressSize);
 
   return DP_OK;
+}
+
+BOOL WINAPI parse_address(REFGUID data_type, DWORD data_size, LPCVOID data, LPVOID context) {
+  struct sp_connect_data* address_data = context;
+  if (IsEqualGUID(data_type, &DPAID_INet)) {
+    memcpy(address_data->host_ip, data, data_size);
+  } else if (IsEqualGUID(data_type, &DPAID_INetPort)) {
+    sprintf(address_data->host_port, "%d", *(int*)data);
+  }
+
+  return TRUE;
 }

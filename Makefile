@@ -12,7 +12,7 @@ DBGFLAGS = -DDEBUG -g
 SOURCES = $(shell find . -name "*.c")
 HEADERS = $(shell find . -name "*.h")
 OBJECTS = $(SOURCES:.c=.o)
-DLL_OBJECTS = dpsp.o dll.o
+DLL_OBJECTS = dpsp.o debug.o dll.o
 
 all: bin/debug/dprun.exe bin/release/dprun.exe
 	@echo "Sizes:"
