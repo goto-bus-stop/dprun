@@ -4,7 +4,7 @@
 CC = i686-w64-mingw32-gcc
 
 CFLAGS = -Wall -DWIN32_LEAN_AND_MEAN
-LDFLAGS = -ldplayx -lole32
+LDFLAGS = -ldplayx -lole32 -lws2_32
 
 OPTFLAGS = -O3 -s
 DBGFLAGS = -DDEBUG -g

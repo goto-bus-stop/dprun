@@ -1,4 +1,6 @@
 #include "shared.h"
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include "debug.h"
 #include "dpsp.h"
 #include <stdio.h>
@@ -84,6 +86,107 @@ HRESULT dpsp_unregister() {
  * Code below here executes in the dll.
  */
 
+struct sp_connect_data {
+  char host_ip[16];
+  char host_port[6];
+  SOCKET socket;
+};
+
+void socket_print_error() {
+  wchar_t *s = NULL;
+  FormatMessageW(
+      FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+      NULL,
+      WSAGetLastError(),
+      MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+      (LPWSTR)&s,
+      0,
+      NULL);
+  fprintf(dbglog, "%S\n", s);
+  LocalFree(s);
+}
+
+HRESULT socket_open(struct sp_connect_data* conn) {
+  WSADATA wsa_data;
+  WSAStartup(MAKEWORD(2, 2), &wsa_data);
+
+  struct addrinfo* info = NULL;
+  struct addrinfo hints;
+  memset(&hints, 0, sizeof(hints));
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_protocol = IPPROTO_TCP;
+  getaddrinfo(conn->host_ip, conn->host_port, &hints, &info);
+
+  SOCKET sock = socket(info->ai_family, info->ai_socktype, info->ai_protocol);
+  if (sock == INVALID_SOCKET) {
+    socket_print_error();
+    freeaddrinfo(info);
+    WSACleanup();
+    fprintf(dbglog, "INVALID_SOCKET\n");
+    return DPERR_GENERIC;
+  }
+
+  int no_delay = 1;
+  int send_buffer = 0;
+  if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (void*)&no_delay, sizeof(no_delay)) == SOCKET_ERROR) {
+    socket_print_error();
+  }
+  if (setsockopt(sock, SOL_SOCKET, SO_SNDBUF, (void*)&send_buffer, sizeof(send_buffer)) == SOCKET_ERROR) {
+    socket_print_error();
+  }
+
+  if (connect(sock, info->ai_addr, info->ai_addrlen) == SOCKET_ERROR) {
+    socket_print_error();
+    closesocket(sock);
+    freeaddrinfo(info);
+    WSACleanup();
+    fprintf(dbglog, "SOCKET_ERROR\n");
+    return DPERR_GENERIC;
+  }
+
+  freeaddrinfo(info);
+  conn->socket = sock;
+
+  return DP_OK;
+}
+
+HRESULT socket_close(struct sp_connect_data* conn) {
+  if (conn->socket == INVALID_SOCKET) return DP_OK;
+
+  shutdown(conn->socket, SD_BOTH);
+  closesocket(conn->socket);
+  conn->socket = INVALID_SOCKET;
+  WSACleanup();
+
+  return DP_OK;
+}
+
+int to_big_endian(int little) {
+  return ((little & 0xFF000000) >> 24 ) |
+         ((little & 0x00FF0000) >> 8) |
+         ((little & 0x0000FF00) << 8) |
+         ((little & 0x000000FF) << 24);
+}
+
+HRESULT socket_send(struct sp_connect_data* conn, const char method[4], void* data, DWORD data_size) {
+  if (conn->socket == INVALID_SOCKET) return DPERR_GENERIC;
+
+  // | length | frame data |
+  void* senddata = malloc(8 + data_size);
+  unsigned int* header = (unsigned int*)senddata;
+  header[0] = to_big_endian(4 + data_size);
+
+  memcpy(&header[1], method, 4);
+  memcpy((void*)&header[2], data, data_size);
+
+  send(conn->socket, senddata, 8 + data_size, 0);
+
+  free(senddata);
+
+  return DP_OK;
+}
+
 static HRESULT emit(const char* method, void* data, DWORD data_size) {
   fprintf(dbglog, "Emit(%s): ", method);
   for (int i = 0; i < data_size; i++) {
@@ -124,7 +227,7 @@ static HRESULT WINAPI callback_GetCaps(DPSP_GETCAPSDATA* data) {
     return DPERR_INVALIDPARAMS;
   }
 
-  data->lpCaps->dwFlags = 0;
+  data->lpCaps->dwFlags = DPCAPS_ASYNCSUPPORTED;
   data->lpCaps->dwMaxBufferSize = 1024;
   data->lpCaps->dwMaxQueueSize = 0;
   data->lpCaps->dwMaxPlayers = 65536;
@@ -139,9 +242,18 @@ static HRESULT WINAPI callback_GetCaps(DPSP_GETCAPSDATA* data) {
 
 static HRESULT WINAPI callback_Open(DPSP_OPENDATA* data) {
   emit("Open", data, sizeof(DPSP_OPENDATA));
+  struct sp_connect_data* address_data;
+  DWORD data_size = 0;
+  IDirectPlaySP_GetSPData(data->lpISP, (void**)&address_data, &data_size, DPSET_LOCAL);
+
+  HRESULT result = socket_open(address_data);
+  if (result != DP_OK) return result;
+
+  fprintf(dbglog, "send: hello\n");
+  socket_send(address_data, "init", "hello\n", 6);
 
   // TODO open connection to host application
-  return DP_OK;
+  return result;
 }
 
 static HRESULT WINAPI callback_CloseEx(DPSP_CLOSEDATA* data) {
@@ -149,7 +261,16 @@ static HRESULT WINAPI callback_CloseEx(DPSP_CLOSEDATA* data) {
 }
 
 static HRESULT WINAPI callback_ShutdownEx(DPSP_SHUTDOWNDATA* data) {
-  return emit("ShutdownEx", data, sizeof(DPSP_SHUTDOWNDATA));
+  emit("ShutdownEx", data, sizeof(DPSP_SHUTDOWNDATA));
+
+  struct sp_connect_data* address_data;
+  DWORD data_size = 0;
+  IDirectPlaySP_GetSPData(data->lpISP, (void**)&address_data, &data_size, DPSET_LOCAL);
+
+  HRESULT result = socket_close(address_data);
+  if (result != DP_OK) return result;
+
+  return DP_OK;
 }
 
 static HRESULT WINAPI callback_GetAddressChoices(DPSP_GETADDRESSCHOICESDATA* data) {
@@ -171,11 +292,6 @@ static HRESULT WINAPI callback_Cancel(DPSP_CANCELDATA* data) {
 static HRESULT WINAPI callback_GetMessageQueue(DPSP_GETMESSAGEQUEUEDATA* data) {
   return emit("GetMessageQueue", data, sizeof(DPSP_GETMESSAGEQUEUEDATA));
 }
-
-struct sp_connect_data {
-  char host_ip[16];
-  char host_port[6];
-};
 
 BOOL WINAPI parse_address(REFGUID data_type, DWORD data_size, LPCVOID data, LPVOID context);
 
@@ -229,6 +345,7 @@ HRESULT dpsp_init(SPINITDATA* init_data) {
   init_data->lpCB->Cancel = NULL;
 
   struct sp_connect_data* address_data = calloc(1, sizeof(struct sp_connect_data));
+  address_data->socket = INVALID_SOCKET;
   HRESULT hr = IDirectPlaySP_EnumAddress(init_data->lpISP, parse_address, init_data->lpAddress, init_data->dwAddressSize, address_data);
 
   if (FAILED(hr)) {
@@ -237,6 +354,8 @@ HRESULT dpsp_init(SPINITDATA* init_data) {
   }
 
   fprintf(dbglog, "address: %s:%s (from %ld)\n", address_data->host_ip, address_data->host_port, init_data->dwAddressSize);
+
+  IDirectPlaySP_SetSPData(init_data->lpISP, address_data, sizeof(*address_data), DPSET_LOCAL);
 
   return DP_OK;
 }
