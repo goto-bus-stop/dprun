@@ -1,12 +1,18 @@
 #include "shared.h"
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <assert.h>
 #include "debug.h"
 #include "dpsp.h"
 #include <stdio.h>
 #include <time.h>
 
 #define DPSP_HEADER_SIZE 20
+#define DPSP_METHOD_OPEN "open"
+#define DPSP_METHOD_SEND "send"
+#define DPSP_METHOD_REPLY "repl"
+#define DPSP_METHOD_CREATE_PLAYER "crpl"
+#define DPSP_METHOD_DELETE_PLAYER "dlpl"
 
 static FILE* dbglog;
 
@@ -14,7 +20,7 @@ static FILE* dbglog;
  * Code below here executes in the host application.
  */
 
-static const char* REG_DPRUN = "Software\\Microsoft\\DirectPlay\\Service Providers\\DPRun";
+#define REG_DPRUN "Software\\Microsoft\\DirectPlay\\Service Providers\\DPRun"
 
 static char g_dprun_path[MAX_PATH] = {0};
 static char* get_dprun_path() {
@@ -86,27 +92,69 @@ HRESULT dpsp_unregister() {
  * Code below here executes in the dll.
  */
 
-struct sp_connect_data {
+typedef struct spsock {
   char host_ip[16];
   char host_port[6];
   SOCKET socket;
-};
+  CRITICAL_SECTION lock;
+  HANDLE receive_thread;
+  unsigned int msg_id;
+} spsock;
 
-void socket_print_error() {
-  wchar_t *s = NULL;
-  FormatMessageW(
-      FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-      NULL,
-      WSAGetLastError(),
-      MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-      (LPWSTR)&s,
-      0,
-      NULL);
-  fprintf(dbglog, "%S\n", s);
-  LocalFree(s);
+static void spsock_print_error() {
+  char *s = get_error_message(WSAGetLastError());
+  fprintf(dbglog, "%s\n", s);
+  CoTaskMemFree(s);
 }
 
-HRESULT socket_open(struct sp_connect_data* conn) {
+HRESULT spsock_create(spsock** out_conn) {
+  spsock* conn = calloc(1, sizeof(spsock));
+  conn->socket = INVALID_SOCKET;
+  InitializeCriticalSection(&conn->lock);
+  *out_conn = conn;
+  return DP_OK;
+}
+
+struct spsock_recvheader {
+  unsigned int size;
+  unsigned int msg_id;
+  unsigned int reply_id;
+};
+static DWORD WINAPI spsock_receive_thread(void* context) {
+  spsock* conn = context;
+
+  // amount of header bytes that are included in the .size attribute,
+  // subtract this from the .size attribute to get the frame data size
+  const int header_bytes_in_size = sizeof(struct spsock_recvheader) - sizeof(unsigned int);
+
+  struct spsock_recvheader header;
+  while (TRUE) {
+    int bytes = recv(conn->socket, (char*)&header, sizeof(header), MSG_PEEK);
+    if (bytes == 0) {
+      return 0;
+    }
+    if (bytes != sizeof(header)) {
+      continue;
+    }
+    // should have the entire thing now
+    assert(recv(conn->socket, (char*)&header, sizeof(header), MSG_WAITALL) == sizeof(header));
+
+    EnterCriticalSection(&conn->lock);
+
+    fprintf(dbglog, "receiving message #%d of size %d, response to %d\n", header.msg_id, header.size, header.reply_id);
+    char* data = calloc(1, header.size - header_bytes_in_size);
+    if (recv(conn->socket, data, header.size - header_bytes_in_size, MSG_WAITALL) == 0) {
+      return 0;
+    }
+
+    LeaveCriticalSection(&conn->lock);
+  }
+  return 1;
+}
+
+HRESULT spsock_open(spsock* conn) {
+  EnterCriticalSection(&conn->lock);
+
   WSADATA wsa_data;
   WSAStartup(MAKEWORD(2, 2), &wsa_data);
 
@@ -120,71 +168,111 @@ HRESULT socket_open(struct sp_connect_data* conn) {
 
   SOCKET sock = socket(info->ai_family, info->ai_socktype, info->ai_protocol);
   if (sock == INVALID_SOCKET) {
-    socket_print_error();
+    HRESULT result = WSAGetLastError();
+    fprintf(dbglog, "INVALID_SOCKET:\n");
+    spsock_print_error();
     freeaddrinfo(info);
     WSACleanup();
-    fprintf(dbglog, "INVALID_SOCKET\n");
-    return DPERR_GENERIC;
+    LeaveCriticalSection(&conn->lock);
+    return result;
   }
 
   int no_delay = 1;
   int send_buffer = 0;
   if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (void*)&no_delay, sizeof(no_delay)) == SOCKET_ERROR) {
-    socket_print_error();
+    spsock_print_error();
   }
   if (setsockopt(sock, SOL_SOCKET, SO_SNDBUF, (void*)&send_buffer, sizeof(send_buffer)) == SOCKET_ERROR) {
-    socket_print_error();
+    spsock_print_error();
   }
 
   if (connect(sock, info->ai_addr, info->ai_addrlen) == SOCKET_ERROR) {
-    socket_print_error();
+    HRESULT result = WSAGetLastError();
+    fprintf(dbglog, "SOCKET_ERROR:\n");
+    spsock_print_error();
     closesocket(sock);
     freeaddrinfo(info);
     WSACleanup();
-    fprintf(dbglog, "SOCKET_ERROR\n");
-    return DPERR_GENERIC;
+    LeaveCriticalSection(&conn->lock);
+    return result;
   }
 
   freeaddrinfo(info);
-  conn->socket = sock;
 
+  HANDLE thread = CreateThread(NULL, 0, spsock_receive_thread, conn, 0, NULL);
+  if (thread == NULL) {
+    HRESULT result = GetLastError();
+    fprintf(dbglog, "THREAD ERROR: %s\n", get_error_message(result));
+    closesocket(sock);
+    WSACleanup();
+    LeaveCriticalSection(&conn->lock);
+    return result;
+  }
+
+  conn->socket = sock;
+  conn->receive_thread = thread;
+
+  LeaveCriticalSection(&conn->lock);
   return DP_OK;
 }
 
-HRESULT socket_close(struct sp_connect_data* conn) {
+HRESULT spsock_close(spsock* conn) {
   if (conn->socket == INVALID_SOCKET) return DP_OK;
 
   shutdown(conn->socket, SD_BOTH);
   closesocket(conn->socket);
   conn->socket = INVALID_SOCKET;
+  if (WaitForSingleObject(conn->receive_thread, 1000) == WAIT_TIMEOUT) {
+    fprintf(dbglog, "!! terminating thread, should've exited cleanly !!");
+    TerminateThread(conn->receive_thread, 1);
+  }
   WSACleanup();
 
   return DP_OK;
 }
 
-int to_big_endian(int little) {
+static int to_big_endian(int little) {
   return ((little & 0xFF000000) >> 24 ) |
          ((little & 0x00FF0000) >> 8) |
          ((little & 0x0000FF00) << 8) |
          ((little & 0x000000FF) << 24);
 }
 
-HRESULT socket_send(struct sp_connect_data* conn, const char method[4], void* data, DWORD data_size) {
+HRESULT spsock_send(spsock* conn, const char method[4], void* data, DWORD data_size) {
   if (conn->socket == INVALID_SOCKET) return DPERR_GENERIC;
 
-  // | length | frame data |
-  void* senddata = malloc(8 + data_size);
+  // | length | id | method | frame data |
+  void* senddata = malloc(12 + data_size);
   unsigned int* header = (unsigned int*)senddata;
-  header[0] = to_big_endian(4 + data_size);
+  header[0] = to_big_endian(8 + data_size);
+  header[1] = to_big_endian(conn->msg_id);
 
-  memcpy(&header[1], method, 4);
-  memcpy((void*)&header[2], data, data_size);
+  memcpy(&header[2], method, 4);
+  memcpy(&header[3], data, data_size);
 
-  send(conn->socket, senddata, 8 + data_size, 0);
+  send(conn->socket, senddata, 12 + data_size, 0);
+  conn->msg_id++;
+  if (conn->msg_id == 0xFFFFFFFF) {
+    conn->msg_id = 0;
+  }
 
   free(senddata);
 
   return DP_OK;
+}
+
+spsock* spsock_load(LPDIRECTPLAYSP sp) {
+  spsock* conn;
+  DWORD data_size = 0;
+  IDirectPlaySP_GetSPData(sp, (void**)&conn, &data_size, DPSET_LOCAL);
+
+  EnterCriticalSection(&conn->lock);
+
+  return conn;
+}
+
+void spsock_release(spsock* conn) {
+  LeaveCriticalSection(&conn->lock);
 }
 
 static HRESULT emit(const char* method, void* data, DWORD data_size) {
@@ -208,8 +296,23 @@ static HRESULT WINAPI callback_Send(DPSP_SENDDATA* data) {
   return emit("Send", data, sizeof(DPSP_SENDDATA));
 }
 
+struct spdata_createplayer {
+  DPID player_id;
+  DWORD flags;
+};
 static HRESULT WINAPI callback_CreatePlayer(DPSP_CREATEPLAYERDATA* data) {
-  return emit("CreatePlayer", data, sizeof(DPSP_CREATEPLAYERDATA));
+  emit("CreatePlayer", data, sizeof(DPSP_CREATEPLAYERDATA));
+  spsock* conn = spsock_load(data->lpISP);
+
+  struct spdata_createplayer senddata = {
+    .player_id = data->idPlayer,
+    .flags = data->dwFlags,
+  };
+
+  spsock_send(conn, DPSP_METHOD_CREATE_PLAYER, &senddata, sizeof(senddata));
+  spsock_release(conn);
+
+  return DP_OK;
 }
 
 static HRESULT WINAPI callback_DeletePlayer(DPSP_DELETEPLAYERDATA* data) {
@@ -240,19 +343,33 @@ static HRESULT WINAPI callback_GetCaps(DPSP_GETCAPSDATA* data) {
   return DP_OK;
 }
 
+struct spdata_open {
+  char create;
+  char return_status;
+  int open_flags;
+  int session_flags;
+};
+
 static HRESULT WINAPI callback_Open(DPSP_OPENDATA* data) {
   emit("Open", data, sizeof(DPSP_OPENDATA));
-  struct sp_connect_data* address_data;
-  DWORD data_size = 0;
-  IDirectPlaySP_GetSPData(data->lpISP, (void**)&address_data, &data_size, DPSET_LOCAL);
+  spsock* conn = spsock_load(data->lpISP);
 
-  HRESULT result = socket_open(address_data);
-  if (result != DP_OK) return result;
+  HRESULT result = spsock_open(conn);
+  if (result != DP_OK) {
+    spsock_release(conn);
+    return result;
+  }
 
-  fprintf(dbglog, "send: hello\n");
-  socket_send(address_data, "init", "hello\n", 6);
+  struct spdata_open senddata = {
+    .create = data->bCreate,
+    .return_status = data->bReturnStatus,
+    .open_flags = data->dwOpenFlags,
+    .session_flags = data->dwSessionFlags,
+  };
 
-  // TODO open connection to host application
+  spsock_send(conn, DPSP_METHOD_OPEN, &senddata, sizeof(senddata));
+  spsock_release(conn);
+
   return result;
 }
 
@@ -263,13 +380,15 @@ static HRESULT WINAPI callback_CloseEx(DPSP_CLOSEDATA* data) {
 static HRESULT WINAPI callback_ShutdownEx(DPSP_SHUTDOWNDATA* data) {
   emit("ShutdownEx", data, sizeof(DPSP_SHUTDOWNDATA));
 
-  struct sp_connect_data* address_data;
-  DWORD data_size = 0;
-  IDirectPlaySP_GetSPData(data->lpISP, (void**)&address_data, &data_size, DPSET_LOCAL);
+  spsock* conn = spsock_load(data->lpISP);
 
-  HRESULT result = socket_close(address_data);
-  if (result != DP_OK) return result;
+  HRESULT result = spsock_close(conn);
+  if (result != DP_OK) {
+    spsock_release(conn);
+    return result;
+  }
 
+  spsock_release(conn);
   return DP_OK;
 }
 
@@ -293,9 +412,19 @@ static HRESULT WINAPI callback_GetMessageQueue(DPSP_GETMESSAGEQUEUEDATA* data) {
   return emit("GetMessageQueue", data, sizeof(DPSP_GETMESSAGEQUEUEDATA));
 }
 
-BOOL WINAPI parse_address(REFGUID data_type, DWORD data_size, LPCVOID data, LPVOID context);
+static BOOL WINAPI parse_address(REFGUID data_type, DWORD data_size, LPCVOID data, LPVOID context) {
+  spsock* conn = context;
+  if (IsEqualGUID(data_type, &DPAID_INet)) {
+    memcpy(conn->host_ip, data, data_size);
+  } else if (IsEqualGUID(data_type, &DPAID_INetPort)) {
+    const int* port_ptr = data;
+    sprintf(conn->host_port, "%d", *port_ptr);
+  }
 
-FILE* create_dbglog() {
+  return TRUE;
+}
+
+static FILE* create_dbglog() {
 #ifdef USE_TIMED_DBGLOG
   char timestr[60];
   time_t t; time(&t);
@@ -344,29 +473,20 @@ HRESULT dpsp_init(SPINITDATA* init_data) {
   init_data->lpCB->SendToGroupEx = NULL;
   init_data->lpCB->Cancel = NULL;
 
-  struct sp_connect_data* address_data = calloc(1, sizeof(struct sp_connect_data));
-  address_data->socket = INVALID_SOCKET;
-  HRESULT hr = IDirectPlaySP_EnumAddress(init_data->lpISP, parse_address, init_data->lpAddress, init_data->dwAddressSize, address_data);
+  spsock* conn;
+  HRESULT result = spsock_create(&conn);
+  if (FAILED(result)) return result;
 
-  if (FAILED(hr)) {
-    fprintf(dbglog, "enumaddress failed: %s\n", get_error_message(hr));
-    return hr;
+  result = IDirectPlaySP_EnumAddress(init_data->lpISP, parse_address, init_data->lpAddress, init_data->dwAddressSize, conn);
+
+  if (FAILED(result)) {
+    fprintf(dbglog, "enumaddress failed: %s\n", get_error_message(result));
+    return result;
   }
 
-  fprintf(dbglog, "address: %s:%s (from %ld)\n", address_data->host_ip, address_data->host_port, init_data->dwAddressSize);
+  fprintf(dbglog, "address: %s:%s (from %ld)\n", conn->host_ip, conn->host_port, init_data->dwAddressSize);
 
-  IDirectPlaySP_SetSPData(init_data->lpISP, address_data, sizeof(*address_data), DPSET_LOCAL);
+  IDirectPlaySP_SetSPData(init_data->lpISP, conn, sizeof(*conn), DPSET_LOCAL);
 
   return DP_OK;
-}
-
-BOOL WINAPI parse_address(REFGUID data_type, DWORD data_size, LPCVOID data, LPVOID context) {
-  struct sp_connect_data* address_data = context;
-  if (IsEqualGUID(data_type, &DPAID_INet)) {
-    memcpy(address_data->host_ip, data, data_size);
-  } else if (IsEqualGUID(data_type, &DPAID_INetPort)) {
-    sprintf(address_data->host_port, "%d", *(int*)data);
-  }
-
-  return TRUE;
 }
