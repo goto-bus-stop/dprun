@@ -8,7 +8,7 @@
 
 static struct option long_options[] = {
   {"help", no_argument, NULL, 'h'},
-  {"host", optional_argument, NULL, 'H'},
+  {"host", no_argument, NULL, 'H'},
   {"join", required_argument, NULL, 'J'},
   {"player", required_argument, NULL, 'p'},
   {"address", required_argument, NULL, 'a'},
@@ -247,11 +247,13 @@ int main(int argc, char** argv) {
     }
     case 'H':
       desc.is_host = TRUE;
-      if (optarg != NULL) {
-        if (parse_guid(optarg, &desc.session_id) != S_OK) {
+      if (optind < argc && argv[optind] != NULL && argv[optind][0] != '\0' && argv[optind][0] != '-') {
+        printf("--host guid: %s\n", argv[optind]);
+        if (parse_guid(argv[optind], &desc.session_id) != S_OK) {
           printf("--host got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
           return 1;
         }
+        optind++;
       } else {
         CoCreateGuid(&desc.session_id);
       }
