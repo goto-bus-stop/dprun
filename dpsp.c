@@ -97,6 +97,7 @@ static char log_getcaps = TRUE;
 typedef struct spsock {
   char host_ip[16];
   char host_port[6];
+  GUID self_id;
   LPDIRECTPLAYSP service_provider;
   SOCKET socket;
   CRITICAL_SECTION lock;
@@ -130,7 +131,7 @@ struct spsock_recvheader {
   unsigned int size;
   unsigned int msg_id;
   unsigned int reply_id;
-  unsigned int from_id;
+  unsigned int _obsolete_from_id_should_be_removed;
 };
 
 static DWORD WINAPI spsock_receive_thread(void* context) {
@@ -158,7 +159,7 @@ static DWORD WINAPI spsock_receive_thread(void* context) {
     header.size = flip_endianness(header.size);
     header.msg_id = flip_endianness(header.msg_id);
     header.reply_id = flip_endianness(header.reply_id);
-    header.from_id = flip_endianness(header.from_id);
+    header._obsolete_from_id_should_be_removed = flip_endianness(header._obsolete_from_id_should_be_removed);
 
     EnterCriticalSection(&conn->lock);
 
@@ -172,7 +173,11 @@ static DWORD WINAPI spsock_receive_thread(void* context) {
 
     if (header.reply_id == 0xFFFFFFFF) {
       fprintf(dbglog, "handle DirectPlay message\n");
-      IDirectPlaySP_HandleMessage(conn->service_provider, data, data_size, &header);
+      IDirectPlaySP_HandleMessage(
+          conn->service_provider,
+          data + sizeof(GUID),
+          data_size - sizeof(GUID),
+          data);
     } else {
       // handle reply
     }
@@ -308,7 +313,19 @@ void spsock_release(spsock* conn) {
   LeaveCriticalSection(&conn->lock);
 }
 
-typedef struct spsock_recvheader dpsp_header;
+/**
+ * Header for DirectPlay messages, identifying the player that sent it.
+ *
+ * MAYBE this can be a DPID instead? it's important that the host application
+ * can relate this to players, so right now we let the host application decide
+ * player GUIDs. A DPID is smaller and makes code on this C end simpler, but
+ * it's not always available (EnumSessions has no DPID, maybe others), and I
+ * don't know which ID to pick in case there are more than 1 players on the local
+ * machine (which is the case for the game host).
+ */
+typedef struct dpsp_header {
+  GUID sender;
+} dpsp_header;
 
 static HRESULT emit(const char* method, void* data, DWORD data_size) {
   fprintf(dbglog, "Emit(%s): ", method);
@@ -334,8 +351,14 @@ static HRESULT WINAPI callback_EnumSessions(DPSP_ENUMSESSIONSDATA* data) {
     }
   }
 
-  void* senddata = data->lpMessage + sizeof(dpsp_header);
-  DWORD senddata_size = data->dwMessageSize - sizeof(dpsp_header);
+  // Add header to the message.
+  dpsp_header header = {
+    .sender = conn->self_id,
+  };
+  memcpy(data->lpMessage, &header, sizeof(dpsp_header));
+
+  void* senddata = data->lpMessage;
+  DWORD senddata_size = data->dwMessageSize;
 
   spsock_send(conn, DPSP_METHOD_ENUM_SESSIONS, senddata, senddata_size);
 
@@ -345,7 +368,7 @@ static HRESULT WINAPI callback_EnumSessions(DPSP_ENUMSESSIONSDATA* data) {
 }
 
 struct spdata_reply {
-  DPID reply_to_id;
+  GUID reply_to;
   DPID nameserver_id;
   DWORD message_size;
   char message[1];
@@ -355,15 +378,24 @@ static HRESULT WINAPI callback_Reply(DPSP_REPLYDATA* data) {
   spsock* conn = spsock_load(data->lpISP);
   assert(conn != NULL);
 
-  dpsp_header* header = data->lpSPMessageHeader;
-  fprintf(dbglog, "ReplyHeader: size: %d reply: %d msg: %d\n", header->size, header->reply_id, header->msg_id);
+  dpsp_header* source_header = data->lpSPMessageHeader;
+
   DWORD senddata_size = sizeof(struct spdata_reply) - 1 + data->dwMessageSize;
+
+  // Add header to message to send.
+  dpsp_header reply_header = {
+    .sender = conn->self_id,
+  };
+  memcpy(data->lpMessage, &reply_header, sizeof(dpsp_header));
+
+  // Message wrapping … nameserver id may be unnecessary?
   struct spdata_reply* senddata = calloc(1, senddata_size);
+  senddata->reply_to = source_header->sender;
   senddata->nameserver_id = data->idNameServer;
   senddata->message_size = data->dwMessageSize;
   memcpy(senddata->message, data->lpMessage, data->dwMessageSize);
 
-  spsock_reply(conn, header->msg_id, DPSP_METHOD_REPLY, senddata, senddata_size);
+  spsock_send(conn, DPSP_METHOD_REPLY, senddata, senddata_size);
 
   free(senddata);
   spsock_release(conn);
@@ -508,6 +540,9 @@ static BOOL WINAPI parse_address(REFGUID data_type, DWORD data_size, LPCVOID dat
   } else if (IsEqualGUID(data_type, &DPAID_INetPort)) {
     const int* port_ptr = data;
     sprintf(conn->host_port, "%d", *port_ptr);
+  } else if (IsEqualGUID(data_type, &DPAID_SelfID)) {
+    assert(data_size == sizeof(GUID));
+    memcpy(&conn->self_id, data, data_size);
   }
 
   return TRUE;
@@ -573,7 +608,11 @@ HRESULT dpsp_init(SPINITDATA* init_data) {
     return result;
   }
 
-  fprintf(dbglog, "address: %s:%s (from %ld)\n", conn->host_ip, conn->host_port, init_data->dwAddressSize);
+  fprintf(dbglog, "address: %s:%s\n", conn->host_ip, conn->host_port);
+
+  if (conn->host_ip == NULL || conn->host_port == NULL || IsEqualGUID(&conn->self_id, &GUID_NULL)) {
+    return DPERR_INVALIDPARAM;
+  }
 
   IDirectPlaySP_SetSPData(init_data->lpISP, conn, sizeof(*conn), DPSET_LOCAL);
 

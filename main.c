@@ -46,7 +46,7 @@ static const char* help_text =
   "      To specify a binary value, use \"b:[hex encoded value]\", for example \"b:DEADBEEF\".\n"
   "      The [key] field is the GUID for the address data type. It also supports constant values:\n"
   "          TotalSize, ServiceProvider, LobbyProvider, Phone, PhoneW,\n"
-  "          Modem, ModemW, INet, INetW, INetPort, ComPort\n"
+  "          Modem, ModemW, INet, INetW, INetPort, ComPort, SelfID\n"
   "  -n, --session-name [name]\n"
   "      The name of the session to host or join (optional).\n"
   "  -q, --session-password [password]\n"
@@ -105,6 +105,7 @@ static HRESULT parse_address_chunk(char* input, DPCOMPOUNDADDRESSELEMENT** out_a
   else if (strcmp(guid_str, "INetW") == 0) data_type = DPAID_INetW;
   else if (strcmp(guid_str, "INetPort") == 0) data_type = DPAID_INetPort;
   else if (strcmp(guid_str, "ComPort") == 0) data_type = DPAID_ComPort;
+  else if (strcmp(guid_str, "SelfID") == 0) data_type = DPAID_SelfID;
   else result = parse_guid(guid_str, &data_type);
 
   // --address {685BC400-9D2C-11cf-A9CD-00AA006886E3}=i:8000
@@ -117,6 +118,20 @@ static HRESULT parse_address_chunk(char* input, DPCOMPOUNDADDRESSELEMENT** out_a
     data = calloc(1, sizeof(DWORD));
     DWORD num = atoi(&eq[3]);
     memcpy(data, &num, sizeof(DWORD));
+  } else if (eq[1] == 'b' && eq[2] == ':') {
+    // binary data
+    char* hex_str = &eq[3];
+    int str_size = strlen(hex_str);
+    data_size = str_size / 2;
+    data = calloc(1, data_size);
+    for (int i = 0; i < str_size; i++) {
+      char current_pair[3] = {
+        hex_str[i * 2],
+        hex_str[i * 2 + 1],
+        '\0',
+      };
+      ((char*)data)[i] = strtol(current_pair, NULL, 16);
+    }
   } else {
     data_size = strlen(eq);
     data = calloc(1, data_size);
