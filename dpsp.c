@@ -7,7 +7,6 @@
 #include <stdio.h>
 #include <time.h>
 
-#define DPSP_HEADER_SIZE 20
 #define DPSP_METHOD_ENUM_SESSIONS "enum"
 #define DPSP_METHOD_OPEN "open"
 #define DPSP_METHOD_SEND "send"
@@ -102,7 +101,7 @@ typedef struct spsock {
   SOCKET socket;
   CRITICAL_SECTION lock;
   HANDLE receive_thread;
-  unsigned int msg_id;
+  unsigned int next_msg_id;
 } spsock;
 
 static void spsock_print_error() {
@@ -131,10 +130,11 @@ struct spsock_recvheader {
   unsigned int size;
   unsigned int msg_id;
   unsigned int reply_id;
+  unsigned int from_id;
 };
+
 static DWORD WINAPI spsock_receive_thread(void* context) {
   spsock* conn = context;
-  char fake_header[DPSP_HEADER_SIZE];
 
   fprintf(dbglog, "starting thread\n");
 
@@ -158,6 +158,7 @@ static DWORD WINAPI spsock_receive_thread(void* context) {
     header.size = flip_endianness(header.size);
     header.msg_id = flip_endianness(header.msg_id);
     header.reply_id = flip_endianness(header.reply_id);
+    header.from_id = flip_endianness(header.from_id);
 
     EnterCriticalSection(&conn->lock);
 
@@ -171,7 +172,7 @@ static DWORD WINAPI spsock_receive_thread(void* context) {
 
     if (header.reply_id == 0xFFFFFFFF) {
       fprintf(dbglog, "handle DirectPlay message\n");
-      IDirectPlaySP_HandleMessage(conn->service_provider, data, data_size, &fake_header);
+      IDirectPlaySP_HandleMessage(conn->service_provider, data, data_size, &header);
     } else {
       // handle reply
     }
@@ -262,28 +263,34 @@ HRESULT spsock_close(spsock* conn) {
   return DP_OK;
 }
 
-HRESULT spsock_send(spsock* conn, const char method[4], void* data, DWORD data_size) {
+HRESULT spsock_reply(spsock* conn, unsigned int reply_to_id, const char method[4], void* data, DWORD data_size) {
   if (conn->socket == INVALID_SOCKET) return DPERR_GENERIC;
 
-  // | length | id | method | frame data |
-  void* senddata = malloc(12 + data_size);
+  // | length | id | reply | method | frame data |
+  int senddata_size = 16 + data_size;
+  void* senddata = malloc(senddata_size);
   unsigned int* header = (unsigned int*)senddata;
   // little to big endian
-  header[0] = flip_endianness(8 + data_size);
-  header[1] = flip_endianness(conn->msg_id);
+  header[0] = flip_endianness(senddata_size - sizeof(header[0]));
+  header[1] = flip_endianness(conn->next_msg_id);
+  header[2] = flip_endianness(reply_to_id);
 
-  memcpy(&header[2], method, 4);
-  memcpy(&header[3], data, data_size);
+  memcpy(&header[3], method, 4);
+  memcpy(&header[4], data, data_size);
 
-  send(conn->socket, senddata, 12 + data_size, 0);
-  conn->msg_id++;
-  if (conn->msg_id == 0xFFFFFFFF) {
-    conn->msg_id = 0;
+  send(conn->socket, senddata, senddata_size, 0);
+  conn->next_msg_id++;
+  if (conn->next_msg_id == 0xFFFFFFFF) {
+    conn->next_msg_id = 0;
   }
 
   free(senddata);
 
   return DP_OK;
+}
+
+HRESULT spsock_send(spsock* conn, const char method[4], void* data, DWORD data_size) {
+  return spsock_reply(conn, 0xFFFFFFFF, method, data, data_size);
 }
 
 spsock* spsock_load(LPDIRECTPLAYSP sp) {
@@ -300,6 +307,8 @@ spsock* spsock_load(LPDIRECTPLAYSP sp) {
 void spsock_release(spsock* conn) {
   LeaveCriticalSection(&conn->lock);
 }
+
+typedef struct spsock_recvheader dpsp_header;
 
 static HRESULT emit(const char* method, void* data, DWORD data_size) {
   fprintf(dbglog, "Emit(%s): ", method);
@@ -325,8 +334,8 @@ static HRESULT WINAPI callback_EnumSessions(DPSP_ENUMSESSIONSDATA* data) {
     }
   }
 
-  void* senddata = data->lpMessage + DPSP_HEADER_SIZE;
-  DWORD senddata_size = data->dwMessageSize - DPSP_HEADER_SIZE;
+  void* senddata = data->lpMessage + sizeof(dpsp_header);
+  DWORD senddata_size = data->dwMessageSize - sizeof(dpsp_header);
 
   spsock_send(conn, DPSP_METHOD_ENUM_SESSIONS, senddata, senddata_size);
 
@@ -335,8 +344,31 @@ static HRESULT WINAPI callback_EnumSessions(DPSP_ENUMSESSIONSDATA* data) {
   return DP_OK;
 }
 
+struct spdata_reply {
+  DPID reply_to_id;
+  DPID nameserver_id;
+  DWORD message_size;
+  char message[1];
+};
 static HRESULT WINAPI callback_Reply(DPSP_REPLYDATA* data) {
-  return emit("Reply", data, sizeof(DPSP_REPLYDATA));
+  emit("Reply", data, sizeof(DPSP_REPLYDATA));
+  spsock* conn = spsock_load(data->lpISP);
+  assert(conn != NULL);
+
+  dpsp_header* header = data->lpSPMessageHeader;
+  fprintf(dbglog, "ReplyHeader: size: %d reply: %d msg: %d\n", header->size, header->reply_id, header->msg_id);
+  DWORD senddata_size = sizeof(struct spdata_reply) - 1 + data->dwMessageSize;
+  struct spdata_reply* senddata = calloc(1, senddata_size);
+  senddata->nameserver_id = data->idNameServer;
+  senddata->message_size = data->dwMessageSize;
+  memcpy(senddata->message, data->lpMessage, data->dwMessageSize);
+
+  spsock_reply(conn, header->msg_id, DPSP_METHOD_REPLY, senddata, senddata_size);
+
+  free(senddata);
+  spsock_release(conn);
+
+  return DP_OK;
 }
 
 static HRESULT WINAPI callback_Send(DPSP_SENDDATA* data) {
@@ -387,7 +419,7 @@ static HRESULT WINAPI callback_GetCaps(DPSP_GETCAPSDATA* data) {
   data->lpCaps->dwHundredBaud = 0;
   data->lpCaps->dwLatency = 50;
   data->lpCaps->dwMaxLocalPlayers = 65536;
-  data->lpCaps->dwHeaderLength = DPSP_HEADER_SIZE;
+  data->lpCaps->dwHeaderLength = sizeof(dpsp_header);
   data->lpCaps->dwTimeout = 500;
 
   return DP_OK;
@@ -504,7 +536,7 @@ HRESULT dpsp_init(SPINITDATA* init_data) {
 
   fprintf(dbglog, "SPInit\n");
 
-  init_data->dwSPHeaderSize = DPSP_HEADER_SIZE;
+  init_data->dwSPHeaderSize = sizeof(dpsp_header);
   init_data->dwSPVersion = (DPSP_MAJORVERSIONMASK & DPSP_MAJORVERSION) | DPRUN_VERSION;
 
   init_data->lpCB->EnumSessions = callback_EnumSessions;
