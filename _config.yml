@@ -1,0 +1,8 @@
+title: DPRun
+description: DPRun is a standalone C++ Windows/Wine utility for starting DirectPlay lobbyable applications.
+google_analytics: 
+show_downloads: true
+theme: jekyll-theme-dinky
+
+gems:
+  - jekyll-mentions
