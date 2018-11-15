@@ -1,3 +1,4 @@
+#include "../shared.h"
 #include "dpsp.h"
 
 BOOL WINAPI DllMain (HINSTANCE dll, DWORD reason, void* reserved) {

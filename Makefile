@@ -3,8 +3,8 @@
 
 CC = i686-w64-mingw32-gcc
 
-CFLAGS = -Wall -DWIN32_LEAN_AND_MEAN
-LDFLAGS = -ldplayx -lole32 -lws2_32
+CFLAGS = -Wall
+LDFLAGS = -ldplayx -lole32 -lws2_32 -luuid
 
 OPTFLAGS = -O3 -s
 DBGFLAGS = -DDEBUG -g
@@ -49,6 +49,7 @@ bin/release/dprun.exe: bin/release/dprun.dll $(OBJECTS)
 
 lint:
 	clang --analyze $(SOURCES) -I./include -I/usr/include/wine/windows/
+	clang --analyze $(DLL_SOURCES) -I./include -I/usr/include/wine/windows/
 
 run: bin/debug/dprun.exe
 	wine bin/debug/dprun.exe
