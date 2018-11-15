@@ -9,10 +9,12 @@ LDFLAGS = -ldplayx -lole32 -lws2_32
 OPTFLAGS = -O3 -s
 DBGFLAGS = -DDEBUG -g
 
-SOURCES = $(shell find . -name "*.c")
-HEADERS = $(shell find . -name "*.h")
+SOURCES = $(shell echo *.c)
+HEADERS = $(shell echo *.h)
 OBJECTS = $(SOURCES:.c=.o)
-DLL_OBJECTS = dpsp.o debug.o dll.o
+DLL_SOURCES = $(shell echo dll/*.c)
+DLL_HEADERS = $(shell echo dll/*.h)
+DLL_OBJECTS = $(DLL_SOURCES:.c=.o) debug.o
 
 all: bin/debug/dprun.exe bin/release/dprun.exe
 	@echo "Sizes:"
