@@ -250,6 +250,15 @@ typedef struct dpsp_header {
   GUID sender;
 } dpsp_header;
 
+static void add_dpsp_header(void* message, DWORD message_size, spsock* conn) {
+  // Add header to the message.
+  dpsp_header header = {
+    .sender = conn->self_id,
+  };
+  assert(sizeof(dpsp_header) >= message_size);
+  memcpy(message, &header, sizeof(dpsp_header));
+}
+
 static HRESULT emit(const char* method, void* data, DWORD data_size) {
   fprintf(dbglog, "Emit(%s): ", method);
   char* chars = data;
@@ -275,10 +284,7 @@ static HRESULT WINAPI callback_EnumSessions(DPSP_ENUMSESSIONSDATA* data) {
   }
 
   // Add header to the message.
-  dpsp_header header = {
-    .sender = conn->self_id,
-  };
-  memcpy(data->lpMessage, &header, sizeof(dpsp_header));
+  add_dpsp_header(data->lpMessage, data->dwMessageSize, conn);
 
   void* senddata = data->lpMessage;
   DWORD senddata_size = data->dwMessageSize;
@@ -306,10 +312,7 @@ static HRESULT WINAPI callback_Reply(DPSP_REPLYDATA* data) {
   DWORD senddata_size = sizeof(struct spdata_reply) - 1 + data->dwMessageSize;
 
   // Add header to message to send.
-  dpsp_header reply_header = {
-    .sender = conn->self_id,
-  };
-  memcpy(data->lpMessage, &reply_header, sizeof(dpsp_header));
+  add_dpsp_header(data->lpMessage, data->dwMessageSize, conn);
 
   // Message wrapping … nameserver id may be unnecessary?
   struct spdata_reply* senddata = calloc(1, senddata_size);
@@ -327,7 +330,21 @@ static HRESULT WINAPI callback_Reply(DPSP_REPLYDATA* data) {
 }
 
 static HRESULT WINAPI callback_Send(DPSP_SENDDATA* data) {
-  return emit("Send", data, sizeof(DPSP_SENDDATA));
+  emit("Send", data, sizeof(DPSP_SENDDATA));
+  spsock* conn = spsock_load(data->lpISP);
+  assert(conn->socket != INVALID_SOCKET);
+
+  // Add header to the message.
+  add_dpsp_header(data->lpMessage, data->dwMessageSize, conn);
+
+  void* senddata = data->lpMessage;
+  DWORD senddata_size = data->dwMessageSize;
+
+  spsock_send(conn, DPSP_METHOD_SEND, senddata, senddata_size);
+
+  spsock_release(conn);
+
+  return DP_OK;
 }
 
 struct spdata_createplayer {
