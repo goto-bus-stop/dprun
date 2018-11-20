@@ -9,8 +9,8 @@ LDFLAGS = -ldplayx -lole32 -lws2_32 -luuid
 OPTFLAGS = -O3 -s
 DBGFLAGS = -DDEBUG -g
 
-SOURCES = $(shell echo *.c)
-HEADERS = $(shell echo *.h)
+SOURCES = $(shell echo *.c cli/*.c)
+HEADERS = $(shell echo *.h cli/*.h)
 OBJECTS = $(SOURCES:.c=.o)
 DLL_SOURCES = $(shell echo dll/*.c)
 DLL_HEADERS = $(shell echo dll/*.h)

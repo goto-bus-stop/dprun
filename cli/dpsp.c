@@ -1,5 +1,5 @@
-#include "shared.h"
-#include "debug.h"
+#include "../shared.h"
+#include "../debug.h"
 #include "dpsp.h"
 #include <winreg.h>
 #include <dplay.h>

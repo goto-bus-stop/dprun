@@ -329,18 +329,34 @@ static HRESULT WINAPI callback_Reply(DPSP_REPLYDATA* data) {
   return DP_OK;
 }
 
+struct spdata_send {
+  DWORD flags;
+  DPID player_to;
+  DPID player_from;
+  BOOL system_message;
+  DWORD message_size;
+  char message[1];
+};
 static HRESULT WINAPI callback_Send(DPSP_SENDDATA* data) {
   emit("Send", data, sizeof(DPSP_SENDDATA));
   spsock* conn = spsock_load(data->lpISP);
   assert(conn->socket != INVALID_SOCKET);
 
-  // Add header to the message.
+  DWORD senddata_size = sizeof(struct spdata_send) - 1 + data->dwMessageSize;
+
+  // Add header to message to send.
   add_dpsp_header(data->lpMessage, data->dwMessageSize, conn);
 
-  void* senddata = data->lpMessage;
-  DWORD senddata_size = data->dwMessageSize;
+  struct spdata_send* senddata = calloc(1, senddata_size);
+  senddata->flags = data->dwFlags;
+  senddata->player_to = data->idPlayerTo;
+  senddata->player_from = data->idPlayerFrom;
+  senddata->system_message = data->bSystemMessage;
+  senddata->message_size = data->dwMessageSize;
+  memcpy(senddata->message, data->lpMessage, data->dwMessageSize);
 
   spsock_send(conn, DPSP_METHOD_SEND, senddata, senddata_size);
+  free(senddata);
 
   spsock_release(conn);
 
@@ -355,6 +371,19 @@ static HRESULT WINAPI callback_CreatePlayer(DPSP_CREATEPLAYERDATA* data) {
   emit("CreatePlayer", data, sizeof(DPSP_CREATEPLAYERDATA));
   spsock* conn = spsock_load(data->lpISP);
   assert(conn != NULL);
+
+  if (data->dwFlags & 8) {
+    HRESULT result = IDirectPlaySP_SetSPPlayerData(
+        data->lpISP,
+        data->idPlayer,
+        &conn->self_id,
+        sizeof(conn->self_id),
+        DPSET_LOCAL);
+    if (FAILED(result)) {
+      spsock_release(conn);
+      return result;
+    }
+  }
 
   struct spdata_createplayer senddata = {
     .player_id = data->idPlayer,

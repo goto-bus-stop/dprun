@@ -1,9 +1,9 @@
-#include "shared.h"
+#include "../shared.h"
 #include <stdio.h>
 #include <dplobby.h>
 #include "session.h"
 #include "dpwrap.h"
-#include "debug.h"
+#include "../debug.h"
 
 static struct session_priv* session_get_private(session_desc* desc) {
   return (struct session_priv*) desc->_private;

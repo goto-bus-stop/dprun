@@ -1,9 +1,9 @@
-#include "shared.h"
+#include "../shared.h"
 #include <stdio.h>
 #include <unistd.h>
 #include <getopt.h>
 #include "session.h"
-#include "debug.h"
+#include "../debug.h"
 #include "dpsp.h"
 
 static struct option long_options[] = {

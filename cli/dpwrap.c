@@ -1,8 +1,8 @@
-#include "shared.h"
+#include "../shared.h"
 #include <stdio.h>
 #include <dplobby.h>
 #include "dpwrap.h"
-#include "debug.h"
+#include "../debug.h"
 
 void dplobbymsg_free(dplobbymsg* message) {
   if (message->data != NULL) free(message->data);
