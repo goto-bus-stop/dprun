@@ -79,7 +79,7 @@ static DWORD WINAPI spsock_receive_thread(void* context) {
     }
     // should have the entire thing now
     bytes = recv(conn->socket, (char*)&header, sizeof(header), MSG_WAITALL);
-    fprintf(dbglog, "[spsock_receive_thread] assert(%d == %d)", bytes, sizeof(header));
+    fprintf(dbglog, "[spsock_receive_thread] assert(%d == %d)\n", bytes, sizeof(header));
     assert(bytes == sizeof(header));
     header.size = flip_endianness(header.size);
     header.msg_id = flip_endianness(header.msg_id);
@@ -93,8 +93,13 @@ static DWORD WINAPI spsock_receive_thread(void* context) {
     char* data = calloc(1, data_size);
     if (recv(conn->socket, data, data_size, MSG_WAITALL) == 0) {
       fprintf(dbglog, "[spsock_receive_thread] stopping thread, socket closed\n");
+      LeaveCriticalSection(&conn->lock);
       return 0;
     }
+
+    // Release lock before handling message,
+    // because the message may trigger replies.
+    LeaveCriticalSection(&conn->lock);
 
     if (header.reply_id == 0xFFFFFFFF) {
       fprintf(dbglog, "[spsock_receive_thread] handle DirectPlay message\n");
@@ -106,8 +111,6 @@ static DWORD WINAPI spsock_receive_thread(void* context) {
     } else {
       // handle reply
     }
-
-    LeaveCriticalSection(&conn->lock);
   }
 
   fprintf(dbglog, "[spsock_receive_thread] stopping thread, ended\n");
@@ -263,12 +266,23 @@ static void add_dpsp_header(void* message, DWORD message_size, spsock* conn) {
   memcpy(message, &header, sizeof(dpsp_header));
 }
 
-static HRESULT get_player_guid(LPDIRECTPLAYSP sp, DPID player, GUID* guid) {
+static HRESULT get_player_guid(LPDIRECTPLAYSP sp, DPID player, GUID* guid_out) {
+  if (player == 0) {
+    fprintf(dbglog, "[get_player_guid] for nameserver\n");
+    memcpy(guid_out, &GUID_NULL, sizeof(GUID));
+    return DP_OK;
+  }
+
+  GUID* guid;
   DWORD guid_size = sizeof(GUID);
+  fprintf(dbglog, "[get_player_guid] for player %ld\n", player);
   HRESULT result = IDirectPlaySP_GetSPPlayerData(
       sp, player, (void**)&guid, &guid_size, DPSET_REMOTE);
-  if (FAILED(result)) {
-    *guid = GUID_NULL;
+  if (SUCCEEDED(result)) {
+    memcpy(guid_out, guid, sizeof(GUID));
+  } else {
+    fprintf(dbglog, "[get_player_guid] FAILED %s\n", get_error_message(result));
+    memcpy(guid_out, &GUID_NULL, sizeof(GUID));
   }
   return result;
 }
@@ -366,14 +380,13 @@ struct spdata_send {
 static HRESULT WINAPI callback_Send(DPSP_SENDDATA* data) {
   emit("Send", data, sizeof(DPSP_SENDDATA));
   spsock* conn = spsock_load(data->lpISP);
-  fprintf(dbglog, "[callback_Send] assert(%d != INVALID_SOCKET)\n", conn->socket);
-  assert(conn->socket != INVALID_SOCKET);
+  fprintf(dbglog, "[callback_Send] assert(%p != NULL && %d != INVALID_SOCKET)\n", conn, conn != NULL ? conn->socket : INVALID_SOCKET);
+  assert(conn != NULL && conn->socket != INVALID_SOCKET);
 
   DWORD senddata_size = sizeof(struct spdata_send) - 1 + data->dwMessageSize;
 
   // Add header to message to send.
   add_dpsp_header(data->lpMessage, data->dwMessageSize, conn);
-
 
   struct spdata_send* senddata = calloc(1, senddata_size);
   senddata->flags = data->dwFlags;
@@ -392,6 +405,7 @@ static HRESULT WINAPI callback_Send(DPSP_SENDDATA* data) {
     return result;
   }
 
+  fprintf(dbglog, "[callback_Send] Sending %ld bytes\n", senddata_size);
   spsock_send(conn, DPSP_METHOD_SEND, senddata, senddata_size);
   free(senddata);
 
@@ -477,6 +491,7 @@ struct spdata_open {
   int session_flags;
 };
 
+static struct spdata_open spbuffer_open;
 static HRESULT WINAPI callback_Open(DPSP_OPENDATA* data) {
   emit("Open", data, sizeof(DPSP_OPENDATA));
   spsock* conn = spsock_load(data->lpISP);
@@ -489,14 +504,12 @@ static HRESULT WINAPI callback_Open(DPSP_OPENDATA* data) {
     }
   }
 
-  struct spdata_open senddata = {
-    .create = data->bCreate,
-    .return_status = data->bReturnStatus,
-    .open_flags = data->dwOpenFlags,
-    .session_flags = data->dwSessionFlags,
-  };
+  spbuffer_open.create = data->bCreate;
+  spbuffer_open.return_status = data->bReturnStatus;
+  spbuffer_open.open_flags = data->dwOpenFlags;
+  spbuffer_open.session_flags = data->dwSessionFlags;
 
-  spsock_send(conn, DPSP_METHOD_OPEN, &senddata, sizeof(senddata));
+  spsock_send(conn, DPSP_METHOD_OPEN, &spbuffer_open, sizeof(spbuffer_open));
   spsock_release(conn);
 
   log_getcaps = FALSE;
