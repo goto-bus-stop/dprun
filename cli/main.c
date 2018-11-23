@@ -64,7 +64,7 @@ static HRESULT parse_guid(char* input, GUID* out_guid) {
 }
 
 static void print_address(dpaddress* addr) {
-  printf("address:\n");
+  printf("[print_address] address:\n");
   for (int i = 0; i < addr->num_elements; i++) {
     DPCOMPOUNDADDRESSELEMENT el = addr->elements[i];
     wchar_t* guid = NULL;
@@ -77,7 +77,7 @@ static void print_address(dpaddress* addr) {
       memcpy(data, el.lpData, 99);
       data[99] = '\0';
     }
-    printf("  %S - %s\n", guid, data);
+    printf("                  %S - %s\n", guid, data);
     free(guid);
   }
 }
@@ -196,7 +196,7 @@ static HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
 }
 
 static BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobbymsg* message) {
-  printf("Receiving message... %ld\n", message->flags);
+  printf("[onmessage] Receiving message... %ld\n", message->flags);
   for (int i = 0; i < message->data_size; i++) {
     printf("%02X", ((char*) message->data)[i]);
   }
@@ -209,23 +209,23 @@ static BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobbymsg* messa
   DPLMSG_SYSTEMMESSAGE* system_message = (DPLMSG_SYSTEMMESSAGE*) message->data;
   switch (system_message->dwType) {
     case DPLSYS_APPTERMINATED:
-      printf("received APPTERMINATED message\n");
+      printf("[onmessage] received APPTERMINATED message\n");
       dplobbymsg_free(message);
       return FALSE;
     case DPLSYS_NEWSESSIONHOST:
-      printf("received NEWSESSIONHOST message\n");
+      printf("[onmessage] received NEWSESSIONHOST message\n");
       break;
     case DPLSYS_CONNECTIONSETTINGSREAD:
-      printf("received CONNECTIONSETTINGSREAD message\n");
+      printf("[onmessage] received CONNECTIONSETTINGSREAD message\n");
       break;
     case DPLSYS_DPLAYCONNECTFAILED:
-      printf("received CONNECTFAILED message\n");
+      printf("[onmessage] received CONNECTFAILED message\n");
       break;
     case DPLSYS_DPLAYCONNECTSUCCEEDED:
-      printf("received CONNECTSUCCEEDED message!\n");
+      printf("[onmessage] received CONNECTSUCCEEDED message!\n");
       break;
     default:
-      printf("received unknown message: %ld\n", system_message->dwType);
+      printf("[onmessage] received unknown message: %ld\n", system_message->dwType);
       break;
     case DPLSYS_GETPROPERTY: {
       DPLMSG_GETPROPERTY* get_prop_message = (DPLMSG_GETPROPERTY*) message->data;
@@ -336,7 +336,7 @@ int main(int argc, char** argv) {
   // Convert wchar_t to char. lmao
   for (int i = 1; i < 38; i++) session_id[i] = session_id[2 * i];
   session_id[38] = '\0';
-  printf("launched session %s\n", session_id);
+  printf("[main] launched session %s\n", session_id);
   FILE* dbg_sessid = fopen("dbg_sessid.txt", "w");
   fwrite((void*)session_id, 38, 1, dbg_sessid);
   fclose(dbg_sessid);
@@ -344,7 +344,7 @@ int main(int argc, char** argv) {
 
   session_process_messages(&desc, onmessage);
 
-  printf("Success!\n");
+  printf("[main] Success!\n");
 
   if (use_dprun_sp) {
     result = dpsp_unregister();
