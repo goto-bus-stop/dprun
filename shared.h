@@ -42,7 +42,7 @@ static HRESULT allow_unused guid_stringify(const GUID* guid, char* out_str) {
   }
 
   // lets hope this thing is big enough!
-  for (int i = 1; i < 38; i++) {
+  for (int i = 0; i < 38; i++) {
     out_str[i] = (char) str[i];
   }
   out_str[38] = '\0';
