@@ -19,16 +19,8 @@ static char* get_dprun_path() {
 HRESULT dpsp_register() {
   char* dprun_path = get_dprun_path();
   char* dprun_desc = "DPRun Lobbying Proxy";
-  char dprun_guid[39];
-  wchar_t* dprun_guidw;
-  StringFromIID(&DPSPGUID_DPRUN, &dprun_guidw);
-
-  for (int i = 0; i < 38; i++) {
-    // Lossy cast is fine here bc it only includes ascii chars
-    dprun_guid[i] = (char) dprun_guidw[i];
-  }
-  dprun_guid[38] = '\0';
-  CoTaskMemFree(dprun_guidw);
+  char dprun_guid[GUID_STR_LEN];
+  guid_stringify(&DPSPGUID_DPRUN, dprun_guid);
 
   HKEY dprun_key;
   LSTATUS result = RegCreateKeyEx(

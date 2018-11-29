@@ -288,10 +288,9 @@ static HRESULT get_player_guid(LPDIRECTPLAYSP sp, DPID player, GUID* guid_out) {
 }
 
 static HRESULT set_player_guid(LPDIRECTPLAYSP sp, DPID player, GUID guid) {
-  wchar_t* guidstr = NULL;
-  StringFromIID(&guid, &guidstr);
-  fprintf(dbglog, "Setting player GUID for %ld: %S\n", player, guidstr);
-  free(guidstr);
+  char guidstr[GUID_STR_LEN];
+  guid_stringify(&guid, guidstr);
+  fprintf(dbglog, "Setting player GUID for %ld: %s\n", player, guidstr);
 
   return IDirectPlaySP_SetSPPlayerData(
       sp, player, &guid, sizeof(guid), DPSET_REMOTE);

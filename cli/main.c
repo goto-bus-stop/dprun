@@ -56,20 +56,13 @@ static const char* help_text =
   "    {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n"
   "    {685BC400-9D2C-11cf-A9CD-00AA006886E3}\n";
 
-static HRESULT parse_guid(char* input, GUID* out_guid) {
-  wchar_t str[39];
-  MultiByteToWideChar(CP_ACP, 0, input, -1, str, 39);
-  str[38] = L'\0';
-  return IIDFromString(str, out_guid);
-}
-
 static void print_address(dpaddress* addr) {
   printf("[print_address] address:\n");
   for (int i = 0; i < addr->num_elements; i++) {
     DPCOMPOUNDADDRESSELEMENT el = addr->elements[i];
-    wchar_t* guid = NULL;
+    char guid[GUID_STR_LEN];
     char data[100];
-    StringFromIID(&el.guidDataType, &guid);
+    guid_stringify(&el.guidDataType, guid);
     if (el.dwDataSize < 100) {
       memcpy(data, el.lpData, el.dwDataSize);
       data[el.dwDataSize] = '\0';
@@ -77,8 +70,7 @@ static void print_address(dpaddress* addr) {
       memcpy(data, el.lpData, 99);
       data[99] = '\0';
     }
-    printf("                  %S - %s\n", guid, data);
-    free(guid);
+    printf("                  %s - %s\n", guid, data);
   }
 }
 
@@ -106,7 +98,7 @@ static HRESULT parse_address_chunk(char* input, DPCOMPOUNDADDRESSELEMENT** out_a
   else if (strcmp(guid_str, "INetPort") == 0) data_type = DPAID_INetPort;
   else if (strcmp(guid_str, "ComPort") == 0) data_type = DPAID_ComPort;
   else if (strcmp(guid_str, "SelfID") == 0) data_type = DPAID_SelfID;
-  else result = parse_guid(guid_str, &data_type);
+  else result = guid_parse(guid_str, &data_type);
 
   // --address {685BC400-9D2C-11cf-A9CD-00AA006886E3}=i:8000
   // --address {685BC400-9D2C-11cf-A9CD-00AA006886E3}=b:DEADBEEF
@@ -166,7 +158,7 @@ static HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
         break;
       case 'A':
         if (optarg == NULL) return 1;
-        parse_guid(optarg, &desc->application);
+        guid_parse(optarg, &desc->application);
         break;
       case 's':
         if (optarg == NULL) return 1;
@@ -175,7 +167,7 @@ static HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
         else if (strcmp(optarg, "SERIAL") == 0) desc->service_provider = DPSPGUID_SERIAL;
         else if (strcmp(optarg, "MODEM") == 0) desc->service_provider = DPSPGUID_MODEM;
         else if (strcmp(optarg, "DPRUN") == 0) desc->service_provider = DPSPGUID_DPRUN;
-        else parse_guid(optarg, &desc->service_provider);
+        else guid_parse(optarg, &desc->service_provider);
         dpaddress_create_element(desc->address, DPAID_ServiceProvider, &desc->service_provider, sizeof(GUID));
         break;
       case 'a': {
@@ -252,7 +244,7 @@ int main(int argc, char** argv) {
   switch (getopt_long(argc, argv, "hj:p:A:n:q:s:", long_options, &opt_index)) {
     case 'J': {
       GUID guid = GUID_NULL;
-      if (strlen(optarg) != 38 || parse_guid(optarg, &guid) != S_OK) {
+      if (strlen(optarg) != 38 || guid_parse(optarg, &guid) != S_OK) {
         printf("--join got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
         return 1;
       }
@@ -264,7 +256,7 @@ int main(int argc, char** argv) {
       desc.is_host = TRUE;
       if (optind < argc && argv[optind] != NULL && argv[optind][0] != '\0' && argv[optind][0] != '-') {
         printf("--host guid: %s\n", argv[optind]);
-        if (parse_guid(argv[optind], &desc.session_id) != S_OK) {
+        if (guid_parse(argv[optind], &desc.session_id) != S_OK) {
           printf("--host got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
           return 1;
         }
@@ -330,17 +322,13 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  char* session_id;
-  StringFromIID(&desc.session_id, (wchar_t**)&session_id);
+  char session_id[GUID_STR_LEN];
+  guid_stringify(&desc.session_id, session_id);
 
-  // Convert wchar_t to char. lmao
-  for (int i = 1; i < 38; i++) session_id[i] = session_id[2 * i];
-  session_id[38] = '\0';
   printf("[main] launched session %s\n", session_id);
   FILE* dbg_sessid = fopen("dbg_sessid.txt", "w");
   fwrite((void*)session_id, 38, 1, dbg_sessid);
   fclose(dbg_sessid);
-  free(session_id);
 
   session_process_messages(&desc, onmessage);
 
