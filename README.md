@@ -48,6 +48,28 @@ GUIDs passed to dprun must be formatted like below, including braces and dashes:
     {685BC400-9D2C-11cf-A9CD-00AA006886E3}
 ```
 
+## DPRun Service Provider
+
+This app ships with a DirectPlay service provider dprun.dll. Service Providers are the things that actually handle network communication, so this can be used to replace the default TCP/IP network stack. When starting a game using the `DPRUN` service provider (`--service-provider=DPRUN`), DPRun temporarily registers this .dll file with the DirectPlay Service Providers list, and uses it to start the game.
+
+The DPRun service provider is different from most service providers in that it doesn't do any networking. Instead, it sends all game communication packets to a local socket of your choosing, so you can implement your own networking stack inside a host application. This host application can live on Windows, inside Wine, or even in Linux/macOS outside Wine.
+
+To configure the socket address, use the INet and INetPort address types:
+
+```
+--service-provider DPRUN
+--address INet=127.0.0.1
+--address INetPort=i:3456
+```
+
+The DPRun Service Provider needs some metadata to identify the players that send and receive messages. You should pass in a third address type, SelfID. SelfID is a GUID (16 random bytes), encoded as a hexadecimal string:
+
+```
+--address SelfID=b:1e1bf813fd161cf55e3e2a3d8d3e2a48
+```
+
+Further documentation on the socket API may follow :)
+
 ## License
 
 [GPL-3.0](./LICENSE.md)
