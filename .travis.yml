@@ -3,13 +3,21 @@ matrix:
   include:
     - os: linux
       dist: xenial
-
-script:
-  - make
-  - make lint
-
-addons:
-  apt:
-    packages:
-      - mingw-w64
-      - wine-dev
+      env: JOB=build
+      addons:
+        apt:
+          packages:
+            - mingw-w64
+      script:
+        - make
+    - os: linux
+      dist: xenial
+      env: JOB=lint
+      addons:
+        apt:
+          packages:
+            # The wine header files don't assume a Windows environment,
+            # so we can use them to run clang-analyze
+            - wine-dev
+      script:
+        - make lint
