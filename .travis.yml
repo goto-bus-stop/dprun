@@ -12,3 +12,4 @@ addons:
   apt:
     packages:
       - mingw-w64
+      - wine
