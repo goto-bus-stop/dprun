@@ -18,7 +18,8 @@ DLL_OBJECTS = $(DLL_SOURCES:.c=.o) debug.o
 
 all: bin/debug/dprun.exe bin/release/dprun.exe
 	@echo "Sizes:"
-	@ls -sh1 bin/*/dprun.{dll,exe}
+	@ls -sh1 bin/debug/dprun.exe bin/debug/dprun.dll \
+			   bin/release/dprun.exe bin/release/dprun.dll
 debug: bin/debug/dprun.exe
 release: bin/release/dprun.exe
 
