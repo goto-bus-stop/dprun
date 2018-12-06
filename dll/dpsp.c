@@ -369,9 +369,8 @@ static HRESULT WINAPI callback_Reply(DPSP_REPLYDATA* data) {
 
 struct spdata_send {
   DWORD flags;
-  GUID guid_to;
-  DPID player_to;
-  DPID player_from;
+  GUID player_to;
+  GUID player_from;
   BOOL system_message;
   DWORD message_size;
   char message[1];
@@ -389,16 +388,23 @@ static HRESULT WINAPI callback_Send(DPSP_SENDDATA* data) {
 
   struct spdata_send* senddata = calloc(1, senddata_size);
   senddata->flags = data->dwFlags;
-  senddata->guid_to = GUID_NULL;
-  senddata->player_to = data->idPlayerTo;
-  senddata->player_from = data->idPlayerFrom;
+  senddata->player_to = GUID_NULL;
+  senddata->player_from = GUID_NULL;
   senddata->system_message = data->bSystemMessage;
   senddata->message_size = data->dwMessageSize;
   memcpy(senddata->message, data->lpMessage, data->dwMessageSize);
 
-  HRESULT result = get_player_guid(data->lpISP, data->idPlayerTo, &senddata->guid_to);
+  HRESULT result = get_player_guid(data->lpISP, data->idPlayerTo, &senddata->player_to);
   if (FAILED(result)) {
     fprintf(dbglog, "[callback_Send] !! no player GUID for player %ld\n", data->idPlayerTo);
+    spsock_release(conn);
+    free(senddata);
+    return result;
+  }
+
+  result = get_player_guid(data->lpISP, data->idPlayerFrom, &senddata->player_from);
+  if (FAILED(result)) {
+    fprintf(dbglog, "[callback_Send] !! no player GUID for player %ld\n", data->idPlayerFrom);
     spsock_release(conn);
     free(senddata);
     return result;
@@ -415,9 +421,10 @@ static HRESULT WINAPI callback_Send(DPSP_SENDDATA* data) {
 
 struct spdata_createplayer {
   DPID player_id;
+  GUID player_guid;
   DWORD flags;
 };
-static struct spdata_createplayer spbuffer_createplayer = {0, 0};
+static struct spdata_createplayer spbuffer_createplayer = {0, {0, 0, 0, {0, 0, 0, 0, 0, 0, 0, 0}}, 0};
 static HRESULT WINAPI callback_CreatePlayer(DPSP_CREATEPLAYERDATA* data) {
   emit("CreatePlayer", data, sizeof(DPSP_CREATEPLAYERDATA));
   spsock* conn = spsock_load(data->lpISP);
@@ -434,6 +441,11 @@ static HRESULT WINAPI callback_CreatePlayer(DPSP_CREATEPLAYERDATA* data) {
 
   spbuffer_createplayer.player_id = data->idPlayer;
   spbuffer_createplayer.flags = data->dwFlags;
+  HRESULT result = get_player_guid(data->lpISP, data->idPlayer, &spbuffer_createplayer.player_guid);
+  if (FAILED(result)) {
+    spsock_release(conn);
+    return result;
+  }
 
   spsock_send(conn, DPSP_METHOD_CREATE_PLAYER, &spbuffer_createplayer, sizeof(spbuffer_createplayer));
   spsock_release(conn);
@@ -441,7 +453,11 @@ static HRESULT WINAPI callback_CreatePlayer(DPSP_CREATEPLAYERDATA* data) {
   return DP_OK;
 }
 
-static struct spdata_createplayer spbuffer_deleteplayer = {0, 0};
+struct spdata_deleteplayer {
+  DPID player_id;
+  DWORD flags;
+};
+static struct spdata_deleteplayer spbuffer_deleteplayer = {0, 0};
 static HRESULT WINAPI callback_DeletePlayer(DPSP_DELETEPLAYERDATA* data) {
   emit("DeletePlayer", data, sizeof(DPSP_DELETEPLAYERDATA));
   spsock* conn = spsock_load(data->lpISP);
