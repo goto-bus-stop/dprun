@@ -57,6 +57,12 @@ struct spsock_recvheader {
   unsigned int _obsolete_from_id_should_be_removed;
 };
 
+static void spsock_handle_dp_message(LPDIRECTPLAYSP sp, char* data, DWORD data_size, DWORD header_size) {
+  fprintf(dbglog, "[spsock_handle_dp_message] IDirectPlaySP_HandleMessage(%p, %p, %ld, %p)\n",
+      sp, data + header_size, data_size - header_size, data);
+  IDirectPlaySP_HandleMessage(sp, data + header_size, data_size - header_size, data);
+}
+
 static DWORD WINAPI spsock_receive_thread(void* context) {
   spsock* conn = context;
 
@@ -103,11 +109,7 @@ static DWORD WINAPI spsock_receive_thread(void* context) {
 
     if (header.reply_id == 0xFFFFFFFF) {
       fprintf(dbglog, "[spsock_receive_thread] handle DirectPlay message\n");
-      IDirectPlaySP_HandleMessage(
-          conn->service_provider,
-          data + sizeof(GUID),
-          data_size - sizeof(GUID),
-          data);
+      spsock_handle_dp_message(conn->service_provider, data, data_size, sizeof(GUID));
     } else {
       // handle reply
     }
@@ -345,20 +347,33 @@ static HRESULT WINAPI callback_Reply(DPSP_REPLYDATA* data) {
   fprintf(dbglog, "[callback_Reply] assert(%p != NULL)\n", conn);
   assert(conn != NULL);
 
+  fprintf(dbglog, "[callback_Reply] source_header\n");
   dpsp_header* source_header = data->lpSPMessageHeader;
+  if (source_header == NULL) {
+    fprintf(dbglog, "[callback_Reply] !! no message header, discarding !!\n");
+    return DPERR_GENERIC;
+  }
 
   DWORD senddata_size = sizeof(struct spdata_reply) - 1 + data->dwMessageSize;
 
   // Add header to message to send.
+  fprintf(dbglog, "[callback_Reply] add_dpsp_header\n");
   add_dpsp_header(data->lpMessage, data->dwMessageSize, conn);
 
   // Message wrapping … nameserver id may be unnecessary?
   struct spdata_reply* senddata = calloc(1, senddata_size);
+  fprintf(dbglog, "[callback_Reply] assert(%p != NULL); senddata_size=%ld\n", senddata, senddata_size);
+  assert(senddata != NULL);
+  fprintf(dbglog, "[callback_Reply] reply_to(%p)\n", source_header);
   senddata->reply_to = source_header->sender;
+  fprintf(dbglog, "[callback_Reply] nameserver_id\n");
   senddata->nameserver_id = data->idNameServer;
+  fprintf(dbglog, "[callback_Reply] message_size\n");
   senddata->message_size = data->dwMessageSize;
+  fprintf(dbglog, "[callback_Reply] memcpy(%p, %p, %ld)\n", senddata->message, data->lpMessage, data->dwMessageSize);
   memcpy(senddata->message, data->lpMessage, data->dwMessageSize);
 
+  fprintf(dbglog, "[callback_Reply] spsock_send\n");
   spsock_send(conn, DPSP_METHOD_REPLY, senddata, senddata_size);
 
   free(senddata);
