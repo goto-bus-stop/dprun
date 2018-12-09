@@ -439,7 +439,6 @@ struct spdata_createplayer {
   GUID player_guid;
   DWORD flags;
 };
-static struct spdata_createplayer spbuffer_createplayer = {0, {0, 0, 0, {0, 0, 0, 0, 0, 0, 0, 0}}, 0};
 static HRESULT WINAPI callback_CreatePlayer(DPSP_CREATEPLAYERDATA* data) {
   emit("CreatePlayer", data, sizeof(DPSP_CREATEPLAYERDATA));
   spsock* conn = spsock_load(data->lpISP);
@@ -454,15 +453,18 @@ static HRESULT WINAPI callback_CreatePlayer(DPSP_CREATEPLAYERDATA* data) {
     }
   }
 
-  spbuffer_createplayer.player_id = data->idPlayer;
-  spbuffer_createplayer.flags = data->dwFlags;
-  HRESULT result = get_player_guid(data->lpISP, data->idPlayer, &spbuffer_createplayer.player_guid);
+  struct spdata_createplayer senddata = {
+    .player_id = data->idPlayer,
+    .player_guid = GUID_NULL,
+    .flags = data->dwFlags,
+  };
+  HRESULT result = get_player_guid(data->lpISP, data->idPlayer, &senddata.player_guid);
   if (FAILED(result)) {
     spsock_release(conn);
     return result;
   }
 
-  spsock_send(conn, DPSP_METHOD_CREATE_PLAYER, &spbuffer_createplayer, sizeof(spbuffer_createplayer));
+  spsock_send(conn, DPSP_METHOD_CREATE_PLAYER, &senddata, sizeof(senddata));
   spsock_release(conn);
 
   return DP_OK;
@@ -472,17 +474,18 @@ struct spdata_deleteplayer {
   DPID player_id;
   DWORD flags;
 };
-static struct spdata_deleteplayer spbuffer_deleteplayer = {0, 0};
 static HRESULT WINAPI callback_DeletePlayer(DPSP_DELETEPLAYERDATA* data) {
   emit("DeletePlayer", data, sizeof(DPSP_DELETEPLAYERDATA));
   spsock* conn = spsock_load(data->lpISP);
   fprintf(dbglog, "[callback_DeletePlayer] assert(%p != NULL)\n", conn);
   assert(conn != NULL);
 
-  spbuffer_deleteplayer.player_id = data->idPlayer;
-  spbuffer_deleteplayer.flags = data->dwFlags;
+  struct spdata_deleteplayer senddata = {
+    .player_id = data->idPlayer,
+    .flags = data->dwFlags,
+  };
 
-  spsock_send(conn, DPSP_METHOD_DELETE_PLAYER, &spbuffer_deleteplayer, sizeof(spbuffer_deleteplayer));
+  spsock_send(conn, DPSP_METHOD_DELETE_PLAYER, &senddata, sizeof(senddata));
   spsock_release(conn);
 
   return DP_OK;
@@ -521,7 +524,6 @@ struct spdata_open {
   int session_flags;
 };
 
-static struct spdata_open spbuffer_open;
 static HRESULT WINAPI callback_Open(DPSP_OPENDATA* data) {
   emit("Open", data, sizeof(DPSP_OPENDATA));
   spsock* conn = spsock_load(data->lpISP);
@@ -534,12 +536,14 @@ static HRESULT WINAPI callback_Open(DPSP_OPENDATA* data) {
     }
   }
 
-  spbuffer_open.create = data->bCreate;
-  spbuffer_open.return_status = data->bReturnStatus;
-  spbuffer_open.open_flags = data->dwOpenFlags;
-  spbuffer_open.session_flags = data->dwSessionFlags;
+  struct spdata_open senddata = {
+    .create = data->bCreate,
+    .return_status = data->bReturnStatus,
+    .open_flags = data->dwOpenFlags,
+    .session_flags = data->dwSessionFlags,
+  };
 
-  spsock_send(conn, DPSP_METHOD_OPEN, &spbuffer_open, sizeof(spbuffer_open));
+  spsock_send(conn, DPSP_METHOD_OPEN, &senddata, sizeof(senddata));
   spsock_release(conn);
 
   log_getcaps = FALSE;
