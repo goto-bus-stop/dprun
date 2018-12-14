@@ -41,7 +41,7 @@ static int flip_endianness(int n) {
          ((n & 0x000000FF) << 24);
 }
 
-HRESULT spsock_create(spsock** out_conn, LPDIRECTPLAYSP service_provider) {
+static HRESULT spsock_create(spsock** out_conn, LPDIRECTPLAYSP service_provider) {
   spsock* conn = calloc(1, sizeof(spsock));
   conn->service_provider = service_provider;
   conn->socket = INVALID_SOCKET;
@@ -119,7 +119,7 @@ static DWORD WINAPI spsock_receive_thread(void* context) {
   return 1;
 }
 
-HRESULT spsock_open(spsock* conn) {
+static HRESULT spsock_open(spsock* conn) {
   EnterCriticalSection(&conn->lock);
 
   WSADATA wsa_data;
@@ -183,7 +183,7 @@ HRESULT spsock_open(spsock* conn) {
   return DP_OK;
 }
 
-HRESULT spsock_close(spsock* conn) {
+static HRESULT spsock_close(spsock* conn) {
   if (conn->socket == INVALID_SOCKET) return DP_OK;
   fprintf(dbglog, "[spsock_close] shutting down socket\n");
 
@@ -199,7 +199,7 @@ HRESULT spsock_close(spsock* conn) {
   return DP_OK;
 }
 
-HRESULT spsock_reply(spsock* conn, unsigned int reply_to_id, const char method[4], void* data, DWORD data_size) {
+static HRESULT spsock_reply(spsock* conn, unsigned int reply_to_id, const char method[4], void* data, DWORD data_size) {
   if (conn->socket == INVALID_SOCKET) return DPERR_GENERIC;
 
   // | length | id | reply | method | frame data |
@@ -225,11 +225,11 @@ HRESULT spsock_reply(spsock* conn, unsigned int reply_to_id, const char method[4
   return DP_OK;
 }
 
-HRESULT spsock_send(spsock* conn, const char method[4], void* data, DWORD data_size) {
+static HRESULT spsock_send(spsock* conn, const char method[4], void* data, DWORD data_size) {
   return spsock_reply(conn, 0xFFFFFFFF, method, data, data_size);
 }
 
-spsock* spsock_load(LPDIRECTPLAYSP sp) {
+static spsock* spsock_load(LPDIRECTPLAYSP sp) {
   spsock* conn;
   DWORD data_size = 0;
   IDirectPlaySP_GetSPData(sp, (void**)&conn, &data_size, DPSET_LOCAL);
@@ -240,7 +240,7 @@ spsock* spsock_load(LPDIRECTPLAYSP sp) {
   return conn;
 }
 
-void spsock_release(spsock* conn) {
+static void spsock_release(spsock* conn) {
   LeaveCriticalSection(&conn->lock);
 }
 
@@ -523,7 +523,6 @@ struct spdata_open {
   int open_flags;
   int session_flags;
 };
-
 static HRESULT WINAPI callback_Open(DPSP_OPENDATA* data) {
   emit("Open", data, sizeof(DPSP_OPENDATA));
   spsock* conn = spsock_load(data->lpISP);
