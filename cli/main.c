@@ -6,10 +6,15 @@
 #include "../debug.h"
 #include "dpsp.h"
 
+#define EXIT_TRUE 0
+#define EXIT_FALSE 1
+#define EXIT_ERR 2
+
 static struct option long_options[] = {
   {"help", no_argument, NULL, 'h'},
   {"host", no_argument, NULL, 'H'},
   {"join", required_argument, NULL, 'J'},
+  {"check", required_argument, NULL, 'c'},
   {"player", required_argument, NULL, 'p'},
   {"address", required_argument, NULL, 'a'},
   {"application", required_argument, NULL, 'A'},
@@ -20,7 +25,7 @@ static struct option long_options[] = {
 };
 
 static const char* help_text =
-  "dprun <--host|--join> [options]\n"
+  "dprun <--host|--join|--check> [options]\n"
   "\n"
   "-H, --host [session]\n"
   "    Host a DirectPlay session.\n"
@@ -29,6 +34,9 @@ static const char* help_text =
   "-J, --join [session]\n"
   "    Join a DirectPlay session.\n"
   "    [session] is the GUID for the session.\n"
+  "-c, --check [application]\n"
+  "    Check if an application is installed and registered with DirectPlay.\n"
+  "    [application] is the GUID for the application.\n"
   "\n"
   "Options:\n"
   "  -p, --player [name]\n"
@@ -145,23 +153,23 @@ static HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
       free(addr_element);
       addr_element = NULL;
     }
-    switch (getopt_long(argc, argv, "Hj:p:A:n:q:s:", long_options, &opt_index)) {
+    switch (getopt_long(argc, argv, "cHJ:p:A:n:q:s:", long_options, &opt_index)) {
       case -1:
         // Done.
-        return DP_OK;
-      case 'J': case 'H':
-        printf("--join and --host may only appear as the first argument\n");
-        return 1;
+        return EXIT_TRUE;
+      case 'J': case 'H': case 'c':
+        printf("--join, --host and --check may only appear as the first argument\n");
+        return EXIT_ERR;
       case 'p':
-        if (optarg == NULL) return 1;
+        if (optarg == NULL) return EXIT_ERR;
         desc->player_name = optarg;
         break;
       case 'A':
-        if (optarg == NULL) return 1;
+        if (optarg == NULL) return EXIT_ERR;
         guid_parse(optarg, &desc->application);
         break;
       case 's':
-        if (optarg == NULL) return 1;
+        if (optarg == NULL) return EXIT_ERR;
         if (strcmp(optarg, "IPX") == 0) desc->service_provider = DPSPGUID_IPX;
         else if (strcmp(optarg, "TCPIP") == 0) desc->service_provider = DPSPGUID_TCPIP;
         else if (strcmp(optarg, "SERIAL") == 0) desc->service_provider = DPSPGUID_SERIAL;
@@ -171,18 +179,18 @@ static HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
         dpaddress_create_element(desc->address, DPAID_ServiceProvider, &desc->service_provider, sizeof(GUID));
         break;
       case 'a': {
-        if (optarg == NULL) return 1;
+        if (optarg == NULL) return EXIT_ERR;
         HRESULT result = parse_address_chunk(optarg, &addr_element);
         if (FAILED(result)) {
           printf("Could not parse address chunk '%s': %s\n", optarg, get_error_message(result));
-          return result;
+          return EXIT_ERR;
         }
         dpaddress_add(desc->address, addr_element);
         break;
       }
       default:
         printf("Unknown argument '%s'\n", long_options[opt_index].name);
-        return 1;
+        return EXIT_ERR;
     }
   }
 }
@@ -238,15 +246,92 @@ static BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobbymsg* messa
   return TRUE;
 }
 
+struct check_app_data {
+  GUID search;
+  DPLAPPINFO result;
+};
+
+BOOL FAR PASCAL check_app_callback(LPCDPLAPPINFO app_info, void* context, DWORD flags) {
+  struct check_app_data* cad = context;
+  if (IsEqualGUID(&cad->search, &app_info->guidApplication)) {
+    printf("Found: %s\n", app_info->lpszAppNameA);
+    memcpy(&cad->result, app_info, sizeof(DPLAPPINFO));
+    // no need to free this because we're exiting in a few ms anyway
+    cad->result.lpszAppNameA = strdup(cad->result.lpszAppNameA);
+    return FALSE;
+  }
+  return TRUE;
+}
+
+int check_app(GUID guid) {
+  LPDIRECTPLAYLOBBY3A lobby;
+  HRESULT result = dplobby_create(&lobby);
+  if (FAILED(result)) {
+    fprintf(stderr, "Could not create DirectPlay lobby: %s\n", get_error_message(result));
+    return EXIT_ERR;
+  }
+
+  struct check_app_data context = {
+    .search = guid,
+    .result = { 0 }
+  };
+  result = IDirectPlayLobby_EnumLocalApplications(lobby, check_app_callback, &context, 0);
+  if (FAILED(result)) {
+    fprintf(stderr, "Could not list local applications: %s\n", get_error_message(result));
+    return EXIT_ERR;
+  }
+
+  if (context.result.dwSize == 0) {
+    fprintf(stderr, "That application is not installed.\n");
+    return EXIT_FALSE;
+  }
+
+  char app_reg_key[MAX_PATH];
+  char app_path[MAX_PATH];
+  DWORD app_path_len = MAX_PATH;
+  HKEY app_hkey;
+  if (sprintf_s(app_reg_key, MAX_PATH, "Software\\Microsoft\\DirectPlay\\Applications\\%s", context.result.lpszAppNameA) == -1) {
+    fprintf(stderr, "Error\n");
+    return EXIT_ERR;
+  }
+
+  LSTATUS status = RegOpenKeyEx(HKEY_LOCAL_MACHINE, app_reg_key, 0, 0, &app_hkey);
+  if (status == ERROR_SUCCESS) status = RegQueryValueEx(app_hkey, "Path", NULL, NULL, (unsigned char*)&app_path, &app_path_len);
+  if (app_hkey) RegCloseKey(app_hkey);
+  if (status == ERROR_FILE_NOT_FOUND) {
+    fprintf(stderr, "Could not find application in registry: %s\n", get_error_message(status));
+    return EXIT_FALSE;
+  }
+  if (status != ERROR_SUCCESS) {
+    fprintf(stderr, "Could not get application path from registry: %s\n", get_error_message(status));
+    return EXIT_ERR;
+  }
+
+  // Ensure it's null terminated
+  if (app_path_len < MAX_PATH - 1) {
+    app_path[app_path_len + 1] = '\0';
+  } else {
+    app_path[MAX_PATH - 1] = '\0';
+  }
+
+  errno_t err = _access_s(app_path, 0);
+  if (err != 0) {
+    fprintf(stderr, "Application path '%s' does not exist.\n", app_path);
+    return EXIT_FALSE;
+  }
+
+  return EXIT_TRUE;
+}
+
 int main(int argc, char** argv) {
   session_desc desc = session_create();
   int opt_index = 0;
-  switch (getopt_long(argc, argv, "hj:p:A:n:q:s:", long_options, &opt_index)) {
+  switch (getopt_long(argc, argv, "c:HJ:p:A:n:q:s:", long_options, &opt_index)) {
     case 'J': {
       GUID guid = GUID_NULL;
-      if (strlen(optarg) != 38 || guid_parse(optarg, &guid) != S_OK) {
+      if (optarg == NULL || strlen(optarg) != 38 || guid_parse(optarg, &guid) != S_OK) {
         printf("--join got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
-        return 1;
+        return EXIT_ERR;
       }
       desc.is_host = FALSE;
       desc.session_id = guid;
@@ -258,37 +343,45 @@ int main(int argc, char** argv) {
         printf("--host guid: %s\n", argv[optind]);
         if (guid_parse(argv[optind], &desc.session_id) != S_OK) {
           printf("--host got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
-          return 1;
+          return EXIT_ERR;
         }
         optind++;
       } else {
         CoCreateGuid(&desc.session_id);
       }
       break;
+    case 'c': {
+      GUID guid = GUID_NULL;
+      if (optarg == NULL || strlen(optarg) != 38 || guid_parse(optarg, &guid) != S_OK) {
+        printf("--check got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
+        return EXIT_ERR;
+      }
+      return check_app(guid);
+    }
     case 'h':
       printf(help_text);
-      return 0;
+      return EXIT_TRUE;
     default:
-      printf("must provide --join or --host as the first argument\n");
-      return 1;
+      printf(help_text);
+      return EXIT_ERR;
   }
 
   HRESULT result = parse_cli_args(argc, argv, &desc);
   if (FAILED(result)) {
-    return 1;
+    return EXIT_ERR;
   }
 
   if (desc.player_name == NULL) {
     printf("Missing --player\n");
-    return 1;
+    return EXIT_ERR;
   }
   if (IsEqualGUID(&desc.application, &GUID_NULL)) {
     printf("Missing --application\n");
-    return 1;
+    return EXIT_ERR;
   }
   if (IsEqualGUID(&desc.service_provider, &GUID_NULL)) {
     printf("Missing --service-provider\n");
-    return 1;
+    return EXIT_ERR;
   }
 
   char use_dprun_sp = IsEqualGUID(&desc.service_provider, &DPSPGUID_DPRUN);
@@ -297,7 +390,7 @@ int main(int argc, char** argv) {
     result = dpsp_register();
     if (FAILED(result)) {
       printf("Could not register DPRun service provider: %s\n", get_error_message(result));
-      return 1;
+      return EXIT_ERR;
     }
   }
 
@@ -319,7 +412,7 @@ int main(int argc, char** argv) {
       }
     }
 
-    return 1;
+    return EXIT_ERR;
   }
 
   char session_id[GUID_STR_LEN];
@@ -341,5 +434,5 @@ int main(int argc, char** argv) {
     }
   }
 
-  return 0;
+  return EXIT_TRUE;
 }
