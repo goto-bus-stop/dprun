@@ -70,6 +70,16 @@ The DPRun Service Provider needs some metadata to identify the players that send
 
 Further documentation on the socket API may follow :)
 
+## Building
+
+This project uses the MinGW GCC compiler suite. The provided Makefile is written for Linux, but Windows contributions are more than welcome.
+
+Run `make` to build both the Service Provider and the DPRun app in debug mode. The built files will be placed in `bin/debug`.
+
+Run `make release` to build both the Service Provider and the DPRun app in release mode. The built files will be placed in `bin/release`.
+
+Run `make lint` to run the CLang analyzer.
+
 ## License
 
 [GPL-3.0](./LICENSE.md)
