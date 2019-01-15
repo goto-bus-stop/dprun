@@ -47,6 +47,6 @@ static HRESULT allow_unused guid_stringify(const GUID* guid, char* out_str) {
   }
   out_str[38] = '\0';
 
-  free(str);
+  CoTaskMemFree(str);
   return 0; // DP_OK
 }
