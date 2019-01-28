@@ -72,7 +72,32 @@ Further documentation on the socket API may follow :)
 
 ## Building
 
-This project uses the MinGW GCC compiler suite. The provided Makefile is written for Linux, but Windows contributions are more than welcome.
+### Linux
+
+This project uses the MinGW GCC compiler suite.
+
+Run `make` to build both the Service Provider and the DPRun app in debug mode. The built files will be placed in `bin/debug`.
+
+Run `make release` to build both the Service Provider and the DPRun app in release mode. The built files will be placed in `bin/release`.
+
+Run `make lint` to run the CLang analyzer.
+
+### Windows
+
+This project can be compiled using [MSYS2](http://www.msys2.org/) with [mingw-w64](https://mingw-w64.org/doku.php).
+
+1. Download and instal [MSYS2](http://www.msys2.org/)
+2. On MSYS2 terminal install `mingw-w64-i686-gcc`, `mingw-w64-i686-gdb` and `make` packages:
+
+```
+pacman -Syu
+pacman -S mingw-w64-i686-gcc mingw-w64-i686-gdb make
+```
+
+3. Configure `PATH` environmental variables (suposing you've install msys64 on `C:\msys64`):
+    - `C:\msys64\usr\bin`
+    - `C:\msys64\mingw32\bin`
+    - `C:\msys64\mingw64\bin`
 
 Run `make` to build both the Service Provider and the DPRun app in debug mode. The built files will be placed in `bin/debug`.
 
