@@ -92,8 +92,6 @@ Run `make` to build both the Service Provider and the DPRun app in debug mode. T
 
 Run `make release` to build both the Service Provider and the DPRun app in release mode. The built files will be placed in `bin/release`.
 
-Run `make lint` to run the CLang analyzer.
-
 ### Windows
 
 This project can be compiled using [MSYS2](http://www.msys2.org/) with [mingw-w64](https://mingw-w64.org/doku.php).
@@ -114,8 +112,6 @@ pacman -S mingw-w64-i686-gcc mingw-w64-i686-gdb make
 Run `make` to build both the Service Provider and the DPRun app in debug mode. The built files will be placed in `bin/debug`.
 
 Run `make release` to build both the Service Provider and the DPRun app in release mode. The built files will be placed in `bin/release`.
-
-Run `make lint` to run the CLang analyzer.
 
 ## License
 
