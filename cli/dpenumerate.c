@@ -1,6 +1,7 @@
 #include "../shared.h"
 #include <stdio.h>
 #include <dplobby.h>
+#include <getopt.h>
 #include "dpwrap.h"
 #include "../debug.h"
 
@@ -23,8 +24,8 @@ static const char* help_text =
   "      CSV output.\n";
 
 
-BOOL FAR PASCAL application_print_callback(LPCDPLAPPINFO lpAppInfo,  LPVOID format,  DWORD dwFlags) {
-  outputfmt format = *((*otuputfmt) format);
+BOOL FAR PASCAL application_print_callback(LPCDPLAPPINFO lpAppInfo,  LPVOID lpContext,  DWORD dwFlags) {
+  enum outputfmt format = * (enum outputfmt*) lpContext;
   char guid[GUID_STR_LEN];
   guid_stringify(&lpAppInfo->guidApplication, guid);
 
@@ -34,7 +35,7 @@ BOOL FAR PASCAL application_print_callback(LPCDPLAPPINFO lpAppInfo,  LPVOID form
       break;
 
     default:
-      printf("  - '%s': '%s'\n", lpAppInfo->lpszAppNameA, guid);
+      printf("  - %s: %s\n", lpAppInfo->lpszAppNameA, guid);
       break;
   }
 
@@ -43,7 +44,7 @@ BOOL FAR PASCAL application_print_callback(LPCDPLAPPINFO lpAppInfo,  LPVOID form
 
 int main(int argc, char** argv) {
   int opt_index = 0;
-  outputfmt format = OUTPUT_FMT_DEFAULT;
+  enum outputfmt format = OUTPUT_FMT_DEFAULT;
 
   switch (getopt_long(argc, argv, "hc", long_options, &opt_index)) {
     case 'c':

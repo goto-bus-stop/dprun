@@ -16,7 +16,7 @@ DLL_SOURCES = $(shell echo dll/*.c)
 DLL_HEADERS = $(shell echo dll/*.h)
 DLL_OBJECTS = $(DLL_SOURCES:.c=.o) debug.o
 ENUMERATE_SOURCES = $(shell echo *.c) cli/dpenumerate.c cli/dpwrap.c
-ENUMERATE_OBJECTS = $(SOURCES:.c=.o)
+ENUMERATE_OBJECTS = $(ENUMERATE_SOURCES:.c=.o)
 
 all: bin/debug/dprun.exe bin/release/dprun.exe bin/debug/dpenumerate.exe bin/release/dpenumerate.exe
 	@echo "Sizes:"
