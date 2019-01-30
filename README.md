@@ -70,6 +70,18 @@ The DPRun Service Provider needs some metadata to identify the players that send
 
 Further documentation on the socket API may follow :)
 
+## dpenumerate
+
+List applications registered with directplay.
+
+```
+dpenumerate [options]
+
+Options:
+  -c, --csv
+      CSV output.
+```
+
 ## Building
 
 ### Linux
