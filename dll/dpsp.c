@@ -17,6 +17,17 @@
 static FILE* dbglog;
 static char log_getcaps = TRUE;
 
+char temp_format[2000] = {0};
+char* prefix_time_format(char* format) {
+  char timestr[20];
+  time_t t; time(&t);
+  struct tm* nf = localtime(&t);
+  strftime(timestr, 20, "%H:%M:%S", nf);
+  sprintf(temp_format, "%s| %s", timestr, format);
+  return temp_format;
+}
+#define log(format, ...) fprintf(dbglog, prefix_time_format(format), ##__VA_ARGS__)
+
 typedef struct spsock {
   char host_ip[16];
   char host_port[6];
@@ -30,7 +41,7 @@ typedef struct spsock {
 
 static void spsock_print_error() {
   char *s = get_error_message(WSAGetLastError());
-  fprintf(dbglog, "%s\n", s);
+  log("%s\n", s);
   CoTaskMemFree(s);
 }
 
@@ -58,7 +69,7 @@ struct spsock_recvheader {
 };
 
 static void spsock_handle_dp_message(LPDIRECTPLAYSP sp, char* data, DWORD data_size, DWORD header_size) {
-  fprintf(dbglog, "[spsock_handle_dp_message] IDirectPlaySP_HandleMessage(%p, %p, %ld, %p)\n",
+  log("[spsock_handle_dp_message] IDirectPlaySP_HandleMessage(sp@%p, data@%p, %ld, header@%p)\n",
       sp, data + header_size, data_size - header_size, data);
   IDirectPlaySP_HandleMessage(sp, data + header_size, data_size - header_size, data);
 }
@@ -66,7 +77,7 @@ static void spsock_handle_dp_message(LPDIRECTPLAYSP sp, char* data, DWORD data_s
 static DWORD WINAPI spsock_receive_thread(void* context) {
   spsock* conn = context;
 
-  fprintf(dbglog, "[spsock_receive_thread] starting thread\n");
+  log("[spsock_receive_thread] starting thread\n");
 
   // amount of header bytes that are included in the .size attribute,
   // subtract this from the .size attribute to get the frame data size
@@ -76,46 +87,49 @@ static DWORD WINAPI spsock_receive_thread(void* context) {
   while (TRUE) {
     int bytes = recv(conn->socket, (char*)&header, sizeof(header), MSG_PEEK);
     if (bytes == 0) {
-      fprintf(dbglog, "[spsock_receive_thread] stopping thread, socket closed\n");
+      log("[spsock_receive_thread] stopping thread, socket closed\n");
       return 0;
     }
-    fprintf(dbglog, "[spsock_receive_thread] peeked %d\n", bytes);
+    log("[spsock_receive_thread] peeked %d\n", bytes);
     if (bytes != sizeof(header)) {
       continue;
     }
     // should have the entire thing now
     bytes = recv(conn->socket, (char*)&header, sizeof(header), MSG_WAITALL);
-    fprintf(dbglog, "[spsock_receive_thread] assert(%d == %d)\n", bytes, sizeof(header));
+    log("[spsock_receive_thread] assert(%d == %d)\n", bytes, sizeof(header));
     assert(bytes == sizeof(header));
     header.size = flip_endianness(header.size);
     header.msg_id = flip_endianness(header.msg_id);
     header.reply_id = flip_endianness(header.reply_id);
     header._obsolete_from_id_should_be_removed = flip_endianness(header._obsolete_from_id_should_be_removed);
 
+    log("[spsock_receive_thread] acquiring lock\n");
     EnterCriticalSection(&conn->lock);
 
-    fprintf(dbglog, "[spsock_receive_thread] receiving message #%d of size %d, response to %d\n", header.msg_id, header.size, header.reply_id);
+    log("[spsock_receive_thread] receiving message #%d of size %d, response to %d\n", header.msg_id, header.size, header.reply_id);
     DWORD data_size = header.size - header_bytes_in_size;
     char* data = calloc(1, data_size);
     if (recv(conn->socket, data, data_size, MSG_WAITALL) == 0) {
-      fprintf(dbglog, "[spsock_receive_thread] stopping thread, socket closed\n");
+      log("[spsock_receive_thread] stopping thread, socket closed\n");
       LeaveCriticalSection(&conn->lock);
       return 0;
     }
 
     // Release lock before handling message,
     // because the message may trigger replies.
+    log("[spsock_receive_thread] releasing lock\n");
     LeaveCriticalSection(&conn->lock);
 
     if (header.reply_id == 0xFFFFFFFF) {
-      fprintf(dbglog, "[spsock_receive_thread] handle DirectPlay message\n");
+      log("[spsock_receive_thread] handle DirectPlay message\n");
       spsock_handle_dp_message(conn->service_provider, data, data_size, sizeof(GUID));
     } else {
       // handle reply
+      log("[spsock_receive_thread] !! TODO should handle reply !!\n");
     }
   }
 
-  fprintf(dbglog, "[spsock_receive_thread] stopping thread, ended\n");
+  log("[spsock_receive_thread] stopping thread, ended\n");
   return 1;
 }
 
@@ -136,7 +150,7 @@ static HRESULT spsock_open(spsock* conn) {
   SOCKET sock = socket(info->ai_family, info->ai_socktype, info->ai_protocol);
   if (sock == INVALID_SOCKET) {
     HRESULT result = WSAGetLastError();
-    fprintf(dbglog, "[spsock_open] INVALID_SOCKET:\n");
+    log("[spsock_open] INVALID_SOCKET:\n");
     spsock_print_error();
     freeaddrinfo(info);
     WSACleanup();
@@ -155,7 +169,7 @@ static HRESULT spsock_open(spsock* conn) {
 
   if (connect(sock, info->ai_addr, info->ai_addrlen) == SOCKET_ERROR) {
     HRESULT result = WSAGetLastError();
-    fprintf(dbglog, "[spsock_open] SOCKET_ERROR:\n");
+    log("[spsock_open] SOCKET_ERROR:\n");
     spsock_print_error();
     closesocket(sock);
     freeaddrinfo(info);
@@ -169,7 +183,7 @@ static HRESULT spsock_open(spsock* conn) {
   HANDLE thread = CreateThread(NULL, 0, spsock_receive_thread, conn, 0, NULL);
   if (thread == NULL) {
     HRESULT result = GetLastError();
-    fprintf(dbglog, "[spsock_open] THREAD ERROR: %s\n", get_error_message(result));
+    log("[spsock_open] THREAD ERROR: %s\n", get_error_message(result));
     closesocket(sock);
     WSACleanup();
     LeaveCriticalSection(&conn->lock);
@@ -185,13 +199,13 @@ static HRESULT spsock_open(spsock* conn) {
 
 static HRESULT spsock_close(spsock* conn) {
   if (conn->socket == INVALID_SOCKET) return DP_OK;
-  fprintf(dbglog, "[spsock_close] shutting down socket\n");
+  log("[spsock_close] shutting down socket\n");
 
   shutdown(conn->socket, SD_BOTH);
   closesocket(conn->socket);
   conn->socket = INVALID_SOCKET;
   if (WaitForSingleObject(conn->receive_thread, 1000) == WAIT_TIMEOUT) {
-    fprintf(dbglog, "[spsock_close] !! terminating thread, should've exited cleanly !!\n");
+    log("[spsock_close] !! terminating thread, should've exited cleanly !!\n");
     TerminateThread(conn->receive_thread, 1);
   }
   WSACleanup();
@@ -263,27 +277,27 @@ static void add_dpsp_header(void* message, DWORD message_size, spsock* conn) {
   dpsp_header header = {
     .sender = conn->self_id,
   };
-  fprintf(dbglog, "[add_dpsp_header] assert(%d <= %ld)\n", sizeof(dpsp_header), message_size);
+  log("[add_dpsp_header] assert(%d <= %ld)\n", sizeof(dpsp_header), message_size);
   assert(sizeof(dpsp_header) <= message_size);
   memcpy(message, &header, sizeof(dpsp_header));
 }
 
 static HRESULT get_player_guid(LPDIRECTPLAYSP sp, DPID player, GUID* guid_out) {
   if (player == 0) {
-    fprintf(dbglog, "[get_player_guid] for nameserver\n");
+    log("[get_player_guid] for nameserver\n");
     memcpy(guid_out, &GUID_NULL, sizeof(GUID));
     return DP_OK;
   }
 
   GUID* guid;
   DWORD guid_size = sizeof(GUID);
-  fprintf(dbglog, "[get_player_guid] for player %ld\n", player);
+  log("[get_player_guid] for player %ld\n", player);
   HRESULT result = IDirectPlaySP_GetSPPlayerData(
       sp, player, (void**)&guid, &guid_size, DPSET_REMOTE);
   if (SUCCEEDED(result)) {
     memcpy(guid_out, guid, sizeof(GUID));
   } else {
-    fprintf(dbglog, "[get_player_guid] FAILED %s\n", get_error_message(result));
+    log("[get_player_guid] FAILED %s\n", get_error_message(result));
     memcpy(guid_out, &GUID_NULL, sizeof(GUID));
   }
   return result;
@@ -292,14 +306,14 @@ static HRESULT get_player_guid(LPDIRECTPLAYSP sp, DPID player, GUID* guid_out) {
 static HRESULT set_player_guid(LPDIRECTPLAYSP sp, DPID player, GUID guid) {
   char guidstr[GUID_STR_LEN];
   guid_stringify(&guid, guidstr);
-  fprintf(dbglog, "Setting player GUID for %ld: %s\n", player, guidstr);
+  log("Setting player GUID for %ld: %s\n", player, guidstr);
 
   return IDirectPlaySP_SetSPPlayerData(
       sp, player, &guid, sizeof(guid), DPSET_REMOTE);
 }
 
 static HRESULT emit(const char* method, void* data, DWORD data_size) {
-  fprintf(dbglog, "[emit] %s: ", method);
+  log("[emit] %s: ", method);
   char* chars = data;
   for (int i = 0; i < data_size; i++) {
     fprintf(dbglog, "%02X", chars[i]);
@@ -316,7 +330,7 @@ static HRESULT WINAPI callback_EnumSessions(DPSP_ENUMSESSIONSDATA* data) {
   if (conn->socket == INVALID_SOCKET) {
     HRESULT result = spsock_open(conn);
     if (FAILED(result)) {
-      fprintf(dbglog, "[callback_EnumSessions] Could not connect to HostServer for EnumSessions\n");
+      log("[callback_EnumSessions] Could not connect to HostServer for EnumSessions\n");
       spsock_release(conn);
       return result;
     }
@@ -344,36 +358,30 @@ struct spdata_reply {
 static HRESULT WINAPI callback_Reply(DPSP_REPLYDATA* data) {
   emit("Reply", data, sizeof(DPSP_REPLYDATA));
   spsock* conn = spsock_load(data->lpISP);
-  fprintf(dbglog, "[callback_Reply] assert(%p != NULL)\n", conn);
+  log("[callback_Reply] assert(conn@%p != NULL)\n", conn);
   assert(conn != NULL);
 
-  fprintf(dbglog, "[callback_Reply] source_header\n");
   dpsp_header* source_header = data->lpSPMessageHeader;
   if (source_header == NULL) {
-    fprintf(dbglog, "[callback_Reply] !! no message header, discarding !!\n");
+    log("[callback_Reply] !! no message header, discarding !!\n");
+    spsock_release(conn);
     return DPERR_GENERIC;
   }
 
   DWORD senddata_size = sizeof(struct spdata_reply) - 1 + data->dwMessageSize;
 
   // Add header to message to send.
-  fprintf(dbglog, "[callback_Reply] add_dpsp_header\n");
   add_dpsp_header(data->lpMessage, data->dwMessageSize, conn);
 
   // Message wrapping … nameserver id may be unnecessary?
   struct spdata_reply* senddata = calloc(1, senddata_size);
-  fprintf(dbglog, "[callback_Reply] assert(%p != NULL); senddata_size=%ld\n", senddata, senddata_size);
+  log("[callback_Reply] assert(senddata@%p != NULL)\n", senddata);
   assert(senddata != NULL);
-  fprintf(dbglog, "[callback_Reply] reply_to(%p)\n", source_header);
   senddata->reply_to = source_header->sender;
-  fprintf(dbglog, "[callback_Reply] nameserver_id\n");
   senddata->nameserver_id = data->idNameServer;
-  fprintf(dbglog, "[callback_Reply] message_size\n");
   senddata->message_size = data->dwMessageSize;
-  fprintf(dbglog, "[callback_Reply] memcpy(%p, %p, %ld)\n", senddata->message, data->lpMessage, data->dwMessageSize);
   memcpy(senddata->message, data->lpMessage, data->dwMessageSize);
 
-  fprintf(dbglog, "[callback_Reply] spsock_send\n");
   spsock_send(conn, DPSP_METHOD_REPLY, senddata, senddata_size);
 
   free(senddata);
@@ -393,7 +401,7 @@ struct spdata_send {
 static HRESULT WINAPI callback_Send(DPSP_SENDDATA* data) {
   emit("Send", data, sizeof(DPSP_SENDDATA));
   spsock* conn = spsock_load(data->lpISP);
-  fprintf(dbglog, "[callback_Send] assert(%p != NULL && %d != INVALID_SOCKET)\n", conn, conn != NULL ? conn->socket : INVALID_SOCKET);
+  log("[callback_Send] assert(conn@%p != NULL && %d != INVALID_SOCKET)\n", conn, conn != NULL ? conn->socket : INVALID_SOCKET);
   assert(conn != NULL && conn->socket != INVALID_SOCKET);
 
   DWORD senddata_size = sizeof(struct spdata_send) - 1 + data->dwMessageSize;
@@ -411,7 +419,7 @@ static HRESULT WINAPI callback_Send(DPSP_SENDDATA* data) {
 
   HRESULT result = get_player_guid(data->lpISP, data->idPlayerTo, &senddata->player_to);
   if (FAILED(result)) {
-    fprintf(dbglog, "[callback_Send] !! no player GUID for player %ld\n", data->idPlayerTo);
+    log("[callback_Send] !! no player GUID for player %ld\n", data->idPlayerTo);
     spsock_release(conn);
     free(senddata);
     return result;
@@ -419,13 +427,13 @@ static HRESULT WINAPI callback_Send(DPSP_SENDDATA* data) {
 
   result = get_player_guid(data->lpISP, data->idPlayerFrom, &senddata->player_from);
   if (FAILED(result)) {
-    fprintf(dbglog, "[callback_Send] !! no player GUID for player %ld\n", data->idPlayerFrom);
+    log("[callback_Send] !! no player GUID for player %ld\n", data->idPlayerFrom);
     spsock_release(conn);
     free(senddata);
     return result;
   }
 
-  fprintf(dbglog, "[callback_Send] Sending %ld bytes\n", senddata_size);
+  log("[callback_Send] Sending %ld bytes\n", senddata_size);
   spsock_send(conn, DPSP_METHOD_SEND, senddata, senddata_size);
   free(senddata);
 
@@ -442,7 +450,7 @@ struct spdata_createplayer {
 static HRESULT WINAPI callback_CreatePlayer(DPSP_CREATEPLAYERDATA* data) {
   emit("CreatePlayer", data, sizeof(DPSP_CREATEPLAYERDATA));
   spsock* conn = spsock_load(data->lpISP);
-  fprintf(dbglog, "[callback_CreatePlayer] assert(%p != NULL)\n", conn);
+  log("[callback_CreatePlayer] assert(conn@%p != NULL)\n", conn);
   assert(conn != NULL);
 
   if (data->dwFlags & 8) {
@@ -477,7 +485,7 @@ struct spdata_deleteplayer {
 static HRESULT WINAPI callback_DeletePlayer(DPSP_DELETEPLAYERDATA* data) {
   emit("DeletePlayer", data, sizeof(DPSP_DELETEPLAYERDATA));
   spsock* conn = spsock_load(data->lpISP);
-  fprintf(dbglog, "[callback_DeletePlayer] assert(%p != NULL)\n", conn);
+  log("[callback_DeletePlayer] assert(conn@%p != NULL)\n", conn);
   assert(conn != NULL);
 
   struct spdata_deleteplayer senddata = {
@@ -505,7 +513,7 @@ static HRESULT WINAPI callback_GetCaps(DPSP_GETCAPSDATA* data) {
   }
 
   data->lpCaps->dwFlags = DPCAPS_ASYNCSUPPORTED;
-  data->lpCaps->dwMaxBufferSize = 1024;
+  data->lpCaps->dwMaxBufferSize = 1024 * 32;
   data->lpCaps->dwMaxQueueSize = 0;
   data->lpCaps->dwMaxPlayers = 65536;
   data->lpCaps->dwHundredBaud = 0;
@@ -600,7 +608,7 @@ static BOOL WINAPI parse_address(REFGUID data_type, DWORD data_size, LPCVOID dat
     const int* port_ptr = data;
     sprintf(conn->host_port, "%d", *port_ptr);
   } else if (IsEqualGUID(data_type, &DPAID_SelfID)) {
-    fprintf(dbglog, "[parse_address] assert(%ld == %d)\n", data_size, sizeof(GUID));
+    log("[parse_address] assert(%ld == %d)\n", data_size, sizeof(GUID));
     assert(data_size == sizeof(GUID));
     memcpy(&conn->self_id, data, data_size);
   }
@@ -631,7 +639,7 @@ HRESULT dpsp_init(SPINITDATA* init_data) {
 
   dbglog = create_dbglog();
 
-  fprintf(dbglog, "[dpsp_init] SPInit()\n");
+  log("[dpsp_init] SPInit()\n");
 
   init_data->dwSPHeaderSize = sizeof(dpsp_header);
   init_data->dwSPVersion = (DPSP_MAJORVERSIONMASK & DPSP_MAJORVERSION) | DPRUN_VERSION;
@@ -666,11 +674,11 @@ HRESULT dpsp_init(SPINITDATA* init_data) {
   result = IDirectPlaySP_EnumAddress(init_data->lpISP, parse_address, init_data->lpAddress, init_data->dwAddressSize, conn);
 
   if (FAILED(result)) {
-    fprintf(dbglog, "[dpsp_init] enumaddress failed: %s\n", get_error_message(result));
+    log("[dpsp_init] enumaddress failed: %s\n", get_error_message(result));
     return result;
   }
 
-  fprintf(dbglog, "[dpsp_init] address: %s:%s\n", conn->host_ip, conn->host_port);
+  log("[dpsp_init] address: %s:%s\n", conn->host_ip, conn->host_port);
 
   if (conn->host_ip == NULL || conn->host_port == NULL || IsEqualGUID(&conn->self_id, &GUID_NULL)) {
     return DPERR_INVALIDPARAM;
