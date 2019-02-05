@@ -76,4 +76,4 @@ test-join: bin/debug/dprun.exe dbg_sessid.txt
 	  --address INet=127.0.0.1
 
 lines:
-	wc -l *.h $(SOURCES)
+	wc -l *.h $(SOURCES) $(DLL_SOURCES)

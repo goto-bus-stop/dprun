@@ -6,6 +6,7 @@
 #include "dpsp.h"
 #include <stdio.h>
 #include <time.h>
+#include <math.h>
 
 #define DPSP_METHOD_ENUM_SESSIONS "enum"
 #define DPSP_METHOD_OPEN "open"
@@ -19,14 +20,15 @@ static char log_getcaps = TRUE;
 
 char temp_format[2000] = {0};
 char* prefix_time_format(char* format) {
+  struct timespec spec;
   char timestr[20];
-  time_t t; time(&t);
-  struct tm* nf = localtime(&t);
+  clock_gettime(CLOCK_REALTIME, &spec);
+  struct tm* nf = localtime(&spec.tv_sec);
   strftime(timestr, 20, "%H:%M:%S", nf);
-  sprintf(temp_format, "%s| %s", timestr, format);
+  sprintf(temp_format, "%s.%03d| %s", timestr, (int) floor(spec.tv_nsec / 1e6), format);
   return temp_format;
 }
-#define log(format, ...) fprintf(dbglog, prefix_time_format(format), ##__VA_ARGS__)
+#define log(format, ...) fprintf(dbglog, prefix_time_format(format), ##__VA_ARGS__); fflush(dbglog)
 
 typedef struct spsock {
   char host_ip[16];
@@ -134,6 +136,7 @@ static DWORD WINAPI spsock_receive_thread(void* context) {
 }
 
 static HRESULT spsock_open(spsock* conn) {
+  log("[spsock_open] acquiring lock\n");
   EnterCriticalSection(&conn->lock);
 
   WSADATA wsa_data;
@@ -154,6 +157,7 @@ static HRESULT spsock_open(spsock* conn) {
     spsock_print_error();
     freeaddrinfo(info);
     WSACleanup();
+    log("[spsock_open] releasing lock\n");
     LeaveCriticalSection(&conn->lock);
     return result;
   }
@@ -174,6 +178,7 @@ static HRESULT spsock_open(spsock* conn) {
     closesocket(sock);
     freeaddrinfo(info);
     WSACleanup();
+    log("[spsock_open] releasing lock\n");
     LeaveCriticalSection(&conn->lock);
     return result;
   }
@@ -186,6 +191,7 @@ static HRESULT spsock_open(spsock* conn) {
     log("[spsock_open] THREAD ERROR: %s\n", get_error_message(result));
     closesocket(sock);
     WSACleanup();
+    log("[spsock_open] releasing lock\n");
     LeaveCriticalSection(&conn->lock);
     return result;
   }
@@ -193,6 +199,7 @@ static HRESULT spsock_open(spsock* conn) {
   conn->socket = sock;
   conn->receive_thread = thread;
 
+  log("[spsock_open] releasing lock\n");
   LeaveCriticalSection(&conn->lock);
   return DP_OK;
 }
@@ -249,12 +256,14 @@ static spsock* spsock_load(LPDIRECTPLAYSP sp) {
   IDirectPlaySP_GetSPData(sp, (void**)&conn, &data_size, DPSET_LOCAL);
   if (conn == NULL) return NULL;
 
+  log("[spsock_load] acquiring lock\n");
   EnterCriticalSection(&conn->lock);
 
   return conn;
 }
 
 static void spsock_release(spsock* conn) {
+  log("[spsock_release] releasing lock\n");
   LeaveCriticalSection(&conn->lock);
 }
 
@@ -291,13 +300,16 @@ static HRESULT get_player_guid(LPDIRECTPLAYSP sp, DPID player, GUID* guid_out) {
 
   GUID* guid;
   DWORD guid_size = sizeof(GUID);
-  log("[get_player_guid] for player %ld\n", player);
+  log("[get_player_guid] for player %ld", player);
   HRESULT result = IDirectPlaySP_GetSPPlayerData(
       sp, player, (void**)&guid, &guid_size, DPSET_REMOTE);
   if (SUCCEEDED(result)) {
+    char guidstr[GUID_STR_LEN];
+    guid_stringify(guid, guidstr);
+    fprintf(dbglog, " = %s\n", guidstr);
     memcpy(guid_out, guid, sizeof(GUID));
   } else {
-    log("[get_player_guid] FAILED %s\n", get_error_message(result));
+    fprintf(dbglog, " FAILED %s\n", get_error_message(result));
     memcpy(guid_out, &GUID_NULL, sizeof(GUID));
   }
   return result;
@@ -319,6 +331,7 @@ static HRESULT emit(const char* method, void* data, DWORD data_size) {
     fprintf(dbglog, "%02X", chars[i]);
   }
   fprintf(dbglog, "\n");
+  fflush(dbglog);
   return DPERR_UNSUPPORTED;
 }
 
@@ -433,7 +446,7 @@ static HRESULT WINAPI callback_Send(DPSP_SENDDATA* data) {
     return result;
   }
 
-  log("[callback_Send] Sending %ld bytes\n", senddata_size);
+  log("[callback_Send] Sending %ld bytes (message = %ld)\n", senddata_size, data->dwMessageSize - sizeof(dpsp_header));
   spsock_send(conn, DPSP_METHOD_SEND, senddata, senddata_size);
   free(senddata);
 
@@ -553,6 +566,7 @@ static HRESULT WINAPI callback_Open(DPSP_OPENDATA* data) {
   spsock_send(conn, DPSP_METHOD_OPEN, &senddata, sizeof(senddata));
   spsock_release(conn);
 
+  // stop noisy GetCaps logging
   log_getcaps = FALSE;
 
   return DP_OK;
