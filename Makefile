@@ -3,7 +3,7 @@
 
 CC = i686-w64-mingw32-gcc
 
-CFLAGS = -Wall
+CFLAGS = -Wall -D_POSIX_C_SOURCE=200809L
 LDFLAGS = -ldplayx -lole32 -lws2_32 -luuid
 
 OPTFLAGS = -O3 -s
@@ -33,7 +33,7 @@ clean:
 .PHONY: all debug release clean
 
 %.o: %.c $(HEADERS)
-	$(CC) -c -Wall -g -I./include $< -o $@
+	$(CC) -c $(CFLAGS) -g -I./include $< -o $@
 
 bin/debug:
 	mkdir -p bin/debug
