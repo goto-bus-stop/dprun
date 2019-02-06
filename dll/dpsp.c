@@ -5,8 +5,6 @@
 #include "../debug.h"
 #include "dpsp.h"
 #include <stdio.h>
-#include <time.h>
-#include <math.h>
 
 #define DPSP_METHOD_ENUM_SESSIONS "enum"
 #define DPSP_METHOD_OPEN "open"
@@ -20,12 +18,12 @@ static char log_getcaps = TRUE;
 
 char temp_format[2000] = {0};
 char* prefix_time_format(char* format) {
-  struct timespec spec;
-  char timestr[20];
-  clock_gettime(CLOCK_REALTIME, &spec);
-  struct tm* nf = localtime(&spec.tv_sec);
-  strftime(timestr, 20, "%H:%M:%S", nf);
-  sprintf(temp_format, "%s.%03d| %s", timestr, (int) floor(spec.tv_nsec / 1e6), format);
+  SYSTEMTIME time;
+  GetLocalTime(&time);
+  sprintf(temp_format,
+      "%02d:%02d:%02d.%03d| %s",
+      time.wHour, time.wMinute, time.wSecond, time.wMilliseconds,
+      format);
   return temp_format;
 }
 #define log(format, ...) fprintf(dbglog, prefix_time_format(format), ##__VA_ARGS__); fflush(dbglog)
@@ -632,12 +630,11 @@ static BOOL WINAPI parse_address(REFGUID data_type, DWORD data_size, LPCVOID dat
 
 static FILE* create_dbglog() {
 #ifdef USE_TIMED_DBGLOG
-  char timestr[60];
-  time_t t; time(&t);
-  struct tm* nf = localtime(&t);
-  strftime(timestr, 60, "%Y-%m-%d_%H-%M-%S", nf);
+  SYSTEMTIME time;
+  GetLocalTime(&time);
   char dbgname[MAX_PATH];
-  sprintf(dbgname, "c:\\dprun_log_%s.txt", timestr);
+  sprintf(dbgname, "c:\\dprun_log_%04d-%02d-%02d_%02d-%02d-%02d.txt",
+      time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute, time.wSecond);
 #else
   char* dbgname = "c:\\dprun_log.txt";
 #endif
