@@ -190,7 +190,7 @@ static HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
 static BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobbymsg* message) {
   printf("[onmessage] Receiving message... %ld\n", message->flags);
   for (int i = 0; i < message->data_size; i++) {
-    printf("%02X", ((char*) message->data)[i]);
+    printf("%02x", ((unsigned char*) message->data)[i]);
   }
   printf("\n");
   if (message->flags == DPLMSG_STANDARD) {

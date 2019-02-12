@@ -28,6 +28,12 @@ char* prefix_time_format(char* format) {
 }
 #define log(format, ...) fprintf(dbglog, prefix_time_format(format), ##__VA_ARGS__); fflush(dbglog)
 
+static void print_buffer(unsigned char* buffer, size_t size) {
+  for (int i = 0; i < size; i++) {
+    fprintf(dbglog, "%02x ", buffer[i]);
+  }
+}
+
 typedef struct spsock {
   char host_ip[16];
   char host_port[6];
@@ -71,6 +77,9 @@ struct spsock_recvheader {
 static void spsock_handle_dp_message(LPDIRECTPLAYSP sp, char* data, DWORD data_size, DWORD header_size) {
   log("[spsock_handle_dp_message] IDirectPlaySP_HandleMessage(sp@%p, data@%p, %ld, header@%p)\n",
       sp, data + header_size, data_size - header_size, data);
+  log("[spsock_handle_dp_message] ");
+  print_buffer((unsigned char*) data, data_size);
+  fprintf(dbglog, "\n");
   IDirectPlaySP_HandleMessage(sp, data + header_size, data_size - header_size, data);
 }
 
@@ -324,10 +333,7 @@ static HRESULT set_player_guid(LPDIRECTPLAYSP sp, DPID player, GUID guid) {
 
 static HRESULT emit(const char* method, void* data, DWORD data_size) {
   log("[emit] %s: ", method);
-  char* chars = data;
-  for (int i = 0; i < data_size; i++) {
-    fprintf(dbglog, "%02X", chars[i]);
-  }
+  print_buffer((unsigned char*) data, data_size);
   fprintf(dbglog, "\n");
   fflush(dbglog);
   return DPERR_UNSUPPORTED;
