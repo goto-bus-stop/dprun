@@ -1,5 +1,4 @@
 #include "../shared.h"
-#include <stdio.h>
 #include <dplobby.h>
 #include "session.h"
 #include "dpwrap.h"
@@ -91,8 +90,6 @@ static BOOL _handle_message(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, session_onm
 HRESULT session_process_messages(session_desc* desc, session_onmessage callback) {
   struct session_priv* data = session_get_private(desc);
 
-  printf("[session_process_messages] App: %ld\n", data->app_id);
-
   while (WaitForSingleObject(data->message_event, INFINITE) == WAIT_OBJECT_0) {
     if (_handle_message(data->dplobby, data->app_id, callback) == FALSE) {
       break;
@@ -100,4 +97,19 @@ HRESULT session_process_messages(session_desc* desc, session_onmessage callback)
   }
 
   return DP_OK;
+}
+
+BOOL session_process_message(session_desc* desc, session_onmessage callback) {
+  struct session_priv* data = session_get_private(desc);
+  return _handle_message(data->dplobby, data->app_id, callback);
+}
+
+HANDLE session_get_event(session_desc* desc) {
+  struct session_priv* data = session_get_private(desc);
+  return data->message_event;
+}
+
+int session_get_pid(session_desc* desc) {
+  struct session_priv* data = session_get_private(desc);
+  return data->app_id;
 }

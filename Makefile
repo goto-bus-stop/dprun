@@ -9,7 +9,7 @@ LDFLAGS = -ldplayx -lole32 -lws2_32 -luuid
 OPTFLAGS = -O3 -s
 DBGFLAGS = -DDEBUG -g
 
-SOURCES = $(shell echo *.c) cli/dpsp.c cli/dpwrap.c cli/main.c cli/session.c
+SOURCES = $(shell echo *.c) cli/dpsp.c cli/dpwrap.c cli/main.c cli/session.c third_party/cjson/cJSON.c
 HEADERS = $(shell echo *.h cli/*.h)
 OBJECTS = $(SOURCES:.c=.o)
 DLL_SOURCES = $(shell echo dll/*.c)
@@ -33,7 +33,7 @@ clean:
 .PHONY: all debug release clean
 
 %.o: %.c $(HEADERS)
-	$(CC) -c $(CFLAGS) -g -I./include $< -o $@
+	$(CC) -c $(CFLAGS) -g -I./include -I./third_party $< -o $@
 
 bin/debug:
 	mkdir -p bin/debug
@@ -66,14 +66,14 @@ test-host: bin/debug/dprun.exe
 	wine bin/debug/dprun.exe --host \
 	  -p 'Host username' \
 	  --application '{5BFDB060-06A4-11d0-9C4F-00A0C905425E}' \
-	  --service-provider TCPIP
+	  --service-provider TCPIP -r
 
 test-join: bin/debug/dprun.exe dbg_sessid.txt
 	wine bin/debug/dprun.exe --join `cat dbg_sessid.txt` \
 	  -p 'Join username' \
 	  --application '{5BFDB060-06A4-11d0-9C4F-00A0C905425E}' \
 	  --service-provider TCPIP \
-	  --address INet=127.0.0.1
+	  --address INet=127.0.0.1 -r
 
 lines:
 	wc -l *.h $(SOURCES) $(DLL_SOURCES)

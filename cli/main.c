@@ -2,11 +2,106 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <getopt.h>
+#define CJSON_HIDE_SYMBOLS
+#include <cjson/cJSON.h>
 #include "session.h"
 #include "../debug.h"
 #include "dpsp.h"
 
+static BOOL json_rpc = FALSE;
+
+#define log(...) fprintf(stderr, __VA_ARGS__)
+
+static char tmp_err_buffer[2048] = {0};
+
+void jsonrpc_emit(char* method, cJSON* params) {
+  if (!json_rpc) return;
+  if (params == NULL) {
+    params = cJSON_CreateNull();
+  }
+  cJSON* message = cJSON_CreateObject();
+  cJSON_AddStringToObject(message, "jsonrpc", "2.0");
+  cJSON_AddStringToObject(message, "method", method);
+  cJSON_AddItemToObject(message, "params", params);
+  char* string = cJSON_PrintUnformatted(message);
+  printf("%s\n", string);
+  cJSON_Delete(message);
+}
+
+void jsonrpc_call(char* method, cJSON* params, DWORD id) {
+  if (!json_rpc) return;
+  if (params == NULL) {
+    params = cJSON_CreateNull();
+  }
+  cJSON* message = cJSON_CreateObject();
+  cJSON_AddStringToObject(message, "jsonrpc", "2.0");
+  cJSON_AddStringToObject(message, "method", method);
+  cJSON_AddItemToObject(message, "params", params);
+  cJSON_AddNumberToObject(message, "id", id);
+  char* string = cJSON_PrintUnformatted(message);
+  printf("%s\n", string);
+  cJSON_Delete(message);
+}
+
+void jsonrpc_handle_notification() {
+}
+
+void jsonrpc_handle_call() {
+}
+
+void jsonrpc_handle_result() {
+}
+
+void jsonrpc_process(char* message) {
+  cJSON* json = cJSON_Parse(message);
+  if (json == NULL) {
+    return;
+  }
+  cJSON* version = cJSON_GetObjectItemCaseSensitive(json, "jsonrpc");
+  cJSON* id = cJSON_GetObjectItemCaseSensitive(json, "id");
+  cJSON* params = cJSON_GetObjectItemCaseSensitive(json, "params");
+
+  if (params != NULL) {
+    cJSON* method = cJSON_GetObjectItemCaseSensitive(json, "method");
+    if (id == NULL) {
+      // Notification
+    } else {
+      // Call
+    }
+  } else if (id != NULL && params == NULL) {
+    // Response
+    cJSON* result = cJSON_GetObjectItemCaseSensitive(json, "result");
+    cJSON* error = cJSON_GetObjectItemCaseSensitive(json, "error");
+  }
+
+  cJSON_Delete(json);
+}
+
+static char stdin_buffer[2048];
+void jsonrpc_poll() {
+  log("jsonrpc_poll\n");
+  DWORD bytes_read = 0;
+  ReadFile(GetStdHandle(STD_INPUT_HANDLE), stdin_buffer, 2048, &bytes_read, NULL);
+  /* char* message = read_line(); */
+  /* log("[jsonrpc_poll] received: %ld %s", bytes_read, stdin_buffer); */
+}
+
+void error(const char* format, ...) {
+  va_list va;
+  va_start(va, format);
+
+  if (json_rpc) {
+    vsprintf(tmp_err_buffer, format, va);
+    jsonrpc_emit("error", cJSON_CreateStringReference(tmp_err_buffer));
+  } else {
+    fprintf(stderr, format, va);
+  }
+
+  va_end(va);
+}
+
 static struct option long_options[] = {
+  {"rpc", no_argument, NULL, 'r'},
   {"help", no_argument, NULL, 'h'},
   {"host", no_argument, NULL, 'H'},
   {"join", required_argument, NULL, 'J'},
@@ -52,12 +147,16 @@ static const char* help_text =
   "  -q, --session-password [password]\n"
   "      The password for the session to host or join (optional).\n"
   "\n"
+  "  -r, --rpc\n"
+  "      Use stdin/stdout for JSON-RPC.\n"
+  "      Events are sent on stdout, control messages are taken from stdin.\n"
+  "\n"
   "GUIDs passed to dprun must be formatted like below, including braces and dashes:\n"
   "    {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n"
   "    {685BC400-9D2C-11cf-A9CD-00AA006886E3}\n";
 
 static void print_address(dpaddress* addr) {
-  printf("[print_address] address:\n");
+  log("[print_address] address:\n");
   for (int i = 0; i < addr->num_elements; i++) {
     DPCOMPOUNDADDRESSELEMENT el = addr->elements[i];
     char guid[GUID_STR_LEN];
@@ -70,7 +169,7 @@ static void print_address(dpaddress* addr) {
       memcpy(data, el.lpData, 99);
       data[99] = '\0';
     }
-    printf("                  %s - %s\n", guid, data);
+    log("                  %s - %s\n", guid, data);
   }
 }
 
@@ -145,12 +244,15 @@ static HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
       free(addr_element);
       addr_element = NULL;
     }
-    switch (getopt_long(argc, argv, "Hj:p:A:n:q:s:", long_options, &opt_index)) {
+    switch (getopt_long(argc, argv, "Hj:p:A:n:q:s:r", long_options, &opt_index)) {
       case -1:
         // Done.
         return DP_OK;
+      case 'r':
+        json_rpc = TRUE;
+        break;
       case 'J': case 'H':
-        printf("--join and --host may only appear as the first argument\n");
+        log("--join and --host may only appear as the first argument\n");
         return 1;
       case 'p':
         if (optarg == NULL) return 1;
@@ -174,25 +276,25 @@ static HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
         if (optarg == NULL) return 1;
         HRESULT result = parse_address_chunk(optarg, &addr_element);
         if (FAILED(result)) {
-          printf("Could not parse address chunk '%s': %s\n", optarg, get_error_message(result));
+          log("Could not parse address chunk '%s': %s\n", optarg, get_error_message(result));
           return result;
         }
         dpaddress_add(desc->address, addr_element);
         break;
       }
       default:
-        printf("Unknown argument '%s'\n", long_options[opt_index].name);
+        log("Unknown argument '%s'\n", long_options[opt_index].name);
         return 1;
     }
   }
 }
 
 static BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobbymsg* message) {
-  printf("[onmessage] Receiving message... %ld\n", message->flags);
+  log("[onmessage] Receiving message... %ld\n", message->flags);
   for (int i = 0; i < message->data_size; i++) {
-    printf("%02x", ((unsigned char*) message->data)[i]);
+    log("%02x", ((unsigned char*) message->data)[i]);
   }
-  printf("\n");
+  log("\n");
   if (message->flags == DPLMSG_STANDARD) {
     dplobbymsg_free(message);
     return TRUE;
@@ -201,26 +303,40 @@ static BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobbymsg* messa
   DPLMSG_SYSTEMMESSAGE* system_message = (DPLMSG_SYSTEMMESSAGE*) message->data;
   switch (system_message->dwType) {
     case DPLSYS_APPTERMINATED:
-      printf("[onmessage] received APPTERMINATED message\n");
+      log("[onmessage] received APPTERMINATED message\n");
+      jsonrpc_emit("appTerminated", NULL);
       dplobbymsg_free(message);
       return FALSE;
     case DPLSYS_NEWSESSIONHOST:
-      printf("[onmessage] received NEWSESSIONHOST message\n");
+      log("[onmessage] received NEWSESSIONHOST message\n");
+      jsonrpc_emit("newSessionHost", NULL);
       break;
     case DPLSYS_CONNECTIONSETTINGSREAD:
-      printf("[onmessage] received CONNECTIONSETTINGSREAD message\n");
+      log("[onmessage] received CONNECTIONSETTINGSREAD message\n");
+      jsonrpc_emit("connectionSettingsRead", NULL);
       break;
     case DPLSYS_DPLAYCONNECTFAILED:
-      printf("[onmessage] received CONNECTFAILED message\n");
+      log("[onmessage] received CONNECTFAILED message\n");
+      jsonrpc_emit("connectFailed", NULL);
       break;
     case DPLSYS_DPLAYCONNECTSUCCEEDED:
-      printf("[onmessage] received CONNECTSUCCEEDED message!\n");
+      log("[onmessage] received CONNECTSUCCEEDED message!\n");
+      jsonrpc_emit("connectSucceeded", NULL);
       break;
     default:
-      printf("[onmessage] received unknown message: %ld\n", system_message->dwType);
+      log("[onmessage] received unknown message: %ld\n", system_message->dwType);
       break;
     case DPLSYS_GETPROPERTY: {
       DPLMSG_GETPROPERTY* get_prop_message = (DPLMSG_GETPROPERTY*) message->data;
+      char player[GUID_STR_LEN];
+      char property[GUID_STR_LEN];
+      guid_stringify(&get_prop_message->guidPlayer, player);
+      guid_stringify(&get_prop_message->guidPropertyTag, property);
+      cJSON* json = cJSON_CreateObject();
+      cJSON_AddStringToObject(json, "player", player);
+      cJSON_AddStringToObject(json, "property", property);
+      jsonrpc_call("getProperty", json, get_prop_message->dwRequestID);
+
       DPLMSG_GETPROPERTYRESPONSE* get_prop_response = calloc(1, sizeof(DPLMSG_GETPROPERTYRESPONSE));
       get_prop_response->dwType = DPLSYS_GETPROPERTYRESPONSE;
       get_prop_response->dwRequestID = get_prop_message->dwRequestID;
@@ -241,11 +357,11 @@ static BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobbymsg* messa
 int main(int argc, char** argv) {
   session_desc desc = session_create();
   int opt_index = 0;
-  switch (getopt_long(argc, argv, "hj:p:A:n:q:s:", long_options, &opt_index)) {
+  switch (getopt_long(argc, argv, "hj:p:A:n:q:s:r", long_options, &opt_index)) {
     case 'J': {
       GUID guid = GUID_NULL;
       if (strlen(optarg) != 38 || guid_parse(optarg, &guid) != S_OK) {
-        printf("--join got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
+        error("--join got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
         return 1;
       }
       desc.is_host = FALSE;
@@ -255,9 +371,9 @@ int main(int argc, char** argv) {
     case 'H':
       desc.is_host = TRUE;
       if (optind < argc && argv[optind] != NULL && argv[optind][0] != '\0' && argv[optind][0] != '-') {
-        printf("--host guid: %s\n", argv[optind]);
+        log("--host guid: %s\n", argv[optind]);
         if (guid_parse(argv[optind], &desc.session_id) != S_OK) {
-          printf("--host got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
+          error("--host got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
           return 1;
         }
         optind++;
@@ -269,7 +385,7 @@ int main(int argc, char** argv) {
       printf(help_text);
       return 0;
     default:
-      printf("must provide --join or --host as the first argument\n");
+      error("must provide --join or --host as the first argument\n");
       return 1;
   }
 
@@ -279,15 +395,15 @@ int main(int argc, char** argv) {
   }
 
   if (desc.player_name == NULL) {
-    printf("Missing --player\n");
+    error("Missing --player\n");
     return 1;
   }
   if (IsEqualGUID(&desc.application, &GUID_NULL)) {
-    printf("Missing --application\n");
+    error("Missing --application\n");
     return 1;
   }
   if (IsEqualGUID(&desc.service_provider, &GUID_NULL)) {
-    printf("Missing --service-provider\n");
+    error("Missing --service-provider\n");
     return 1;
   }
 
@@ -296,7 +412,7 @@ int main(int argc, char** argv) {
   if (use_dprun_sp) {
     result = dpsp_register();
     if (FAILED(result)) {
-      printf("Could not register DPRun service provider: %s\n", get_error_message(result));
+      error("Could not register DPRun service provider: %s\n", get_error_message(result));
       return 1;
     }
   }
@@ -305,17 +421,17 @@ int main(int argc, char** argv) {
 
   result = session_launch(&desc);
   if (FAILED(result)) {
-    printf("Fail: %ld\n", result);
+    error("Fail: %ld\n", result);
     char* message = get_error_message(result);
     if (message != NULL) {
-      printf("%s\n", message);
+      error("%s\n", message);
     }
     free(message);
 
     if (use_dprun_sp) {
       result = dpsp_unregister();
       if (FAILED(result)) {
-        printf("Could not unregister DPRun service provider: %s\n", get_error_message(result));
+        log("Could not unregister DPRun service provider: %s\n", get_error_message(result));
       }
     }
 
@@ -325,19 +441,46 @@ int main(int argc, char** argv) {
   char session_id[GUID_STR_LEN];
   guid_stringify(&desc.session_id, session_id);
 
-  printf("[main] launched session %s\n", session_id);
+  log("[main] launched session %s\n", session_id);
   FILE* dbg_sessid = fopen("dbg_sessid.txt", "w");
   fwrite((void*)session_id, 38, 1, dbg_sessid);
   fclose(dbg_sessid);
 
-  session_process_messages(&desc, onmessage);
+  cJSON* app_launched_json = cJSON_CreateObject();
+  cJSON_AddStringToObject(app_launched_json, "guid", session_id);
+  cJSON_AddNumberToObject(app_launched_json, "pid", session_get_pid(&desc));
+  jsonrpc_emit("appLaunched", app_launched_json);
 
-  printf("[main] Success!\n");
+  HANDLE events[] = {
+    session_get_event(&desc),
+    GetStdHandle(STD_INPUT_HANDLE)
+  };
+  const DWORD num_events = sizeof(events) / sizeof(events[0]);
+  BOOL keep_going = TRUE;
+  while (keep_going) {
+    DWORD wait = WaitForMultipleObjects(num_events, events, FALSE, 100);
+    switch (wait) {
+      case WAIT_OBJECT_0:
+        if (session_process_message(&desc, onmessage) == FALSE) {
+          keep_going = FALSE;
+        }
+        break;
+      case WAIT_OBJECT_0 + 1:
+        jsonrpc_poll();
+        break;
+      case WAIT_FAILED:
+      case WAIT_ABANDONED:
+        keep_going = FALSE;
+        break;
+    }
+  }
+
+  log("[main] Success!\n");
 
   if (use_dprun_sp) {
     result = dpsp_unregister();
     if (FAILED(result)) {
-      printf("Could not unregister DPRun service provider: %s\n", get_error_message(result));
+      log("Could not unregister DPRun service provider: %s\n", get_error_message(result));
     }
   }
 
