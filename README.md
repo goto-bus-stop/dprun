@@ -56,7 +56,7 @@ The DPRun service provider is different from most service providers in that it d
 
 To configure the socket address, use the INet and INetPort address types:
 
-```
+```bash
 --service-provider DPRUN
 --address INet=127.0.0.1
 --address INetPort=i:3456
@@ -64,7 +64,7 @@ To configure the socket address, use the INet and INetPort address types:
 
 The DPRun Service Provider needs some metadata to identify the players that send and receive messages. You should pass in a third address type, SelfID. SelfID is a GUID (16 random bytes), encoded as a hexadecimal string:
 
-```
+```bash
 --address SelfID=b:1e1bf813fd161cf55e3e2a3d8d3e2a48
 ```
 

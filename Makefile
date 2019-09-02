@@ -4,9 +4,9 @@
 CC = i686-w64-mingw32-gcc
 
 CFLAGS = -Wall -D_POSIX_C_SOURCE=200809L
-LDFLAGS = -ldplayx -lole32 -lws2_32 -luuid
+LDFLAGS = -ldplayx -lole32 -lws2_32 -luuid -static-libgcc
 
-OPTFLAGS = -O3 -s
+OPTFLAGS = -O3 -s -flto -Wl,--exclude-all-symbols
 DBGFLAGS = -DDEBUG -g
 
 SOURCES = $(shell echo *.c) cli/dpsp.c cli/dpwrap.c cli/main.c cli/session.c third_party/cjson/cJSON.c

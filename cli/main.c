@@ -103,7 +103,7 @@ void error(const char* format, ...) {
 static struct option long_options[] = {
   {"rpc", no_argument, NULL, 'r'},
   {"help", no_argument, NULL, 'h'},
-  {"host", no_argument, NULL, 'H'},
+  {"host", optional_argument, NULL, 'H'},
   {"join", required_argument, NULL, 'J'},
   {"player", required_argument, NULL, 'p'},
   {"address", required_argument, NULL, 'a'},
@@ -244,7 +244,7 @@ static HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
       free(addr_element);
       addr_element = NULL;
     }
-    switch (getopt_long(argc, argv, "Hj:p:A:n:q:s:r", long_options, &opt_index)) {
+    switch (getopt_long(argc, argv, "HJ:p:A:n:q:s:r", long_options, &opt_index)) {
       case -1:
         // Done.
         return DP_OK;
@@ -357,7 +357,7 @@ static BOOL onmessage(LPDIRECTPLAYLOBBY3A lobby, DWORD app_id, dplobbymsg* messa
 int main(int argc, char** argv) {
   session_desc desc = session_create();
   int opt_index = 0;
-  switch (getopt_long(argc, argv, "hj:p:A:n:q:s:r", long_options, &opt_index)) {
+  switch (getopt_long(argc, argv, "hHJ:p:A:n:q:s:r", long_options, &opt_index)) {
     case 'J': {
       GUID guid = GUID_NULL;
       if (strlen(optarg) != 38 || guid_parse(optarg, &guid) != S_OK) {
