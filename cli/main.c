@@ -236,6 +236,18 @@ static HRESULT parse_address_chunk(char* input, DPCOMPOUNDADDRESSELEMENT** out_a
   return result;
 }
 
+static HRESULT parse_service_provider_guid(char* str, GUID* sp) {
+  if (strcmp(str, "IPX") == 0) *sp = DPSPGUID_IPX;
+  else if (strcmp(str, "TCPIP") == 0) *sp = DPSPGUID_TCPIP;
+  else if (strcmp(str, "SERIAL") == 0) *sp = DPSPGUID_SERIAL;
+  else if (strcmp(str, "MODEM") == 0) *sp = DPSPGUID_MODEM;
+  else if (strcmp(str, "DPRUN") == 0) *sp = DPSPGUID_DPRUN;
+  else {
+    return guid_parse(str, sp);
+  }
+  return DP_OK;
+}
+
 static HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
   int opt_index = 0;
   DPCOMPOUNDADDRESSELEMENT* addr_element = NULL;
@@ -262,16 +274,16 @@ static HRESULT parse_cli_args(int argc, char** argv, session_desc* desc) {
         if (optarg == NULL) return 1;
         guid_parse(optarg, &desc->application);
         break;
-      case 's':
+      case 's': {
         if (optarg == NULL) return 1;
-        if (strcmp(optarg, "IPX") == 0) desc->service_provider = DPSPGUID_IPX;
-        else if (strcmp(optarg, "TCPIP") == 0) desc->service_provider = DPSPGUID_TCPIP;
-        else if (strcmp(optarg, "SERIAL") == 0) desc->service_provider = DPSPGUID_SERIAL;
-        else if (strcmp(optarg, "MODEM") == 0) desc->service_provider = DPSPGUID_MODEM;
-        else if (strcmp(optarg, "DPRUN") == 0) desc->service_provider = DPSPGUID_DPRUN;
-        else guid_parse(optarg, &desc->service_provider);
+        HRESULT result = parse_service_provider_guid(optarg, &desc->service_provider);
+        if (FAILED(result)) {
+          log("Could not parse service provider '%s': %s\n", optarg, get_error_message(result));
+          return result;
+        }
         dpaddress_create_element(desc->address, DPAID_ServiceProvider, &desc->service_provider, sizeof(GUID));
         break;
+      }
       case 'a': {
         if (optarg == NULL) return 1;
         HRESULT result = parse_address_chunk(optarg, &addr_element);
