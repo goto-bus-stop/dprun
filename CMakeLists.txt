@@ -4,6 +4,10 @@ project(dprun
   LANGUAGES C
 )
 
+if (NOT CMAKE_BUILD_TYPE STREQUAL Debug)
+  set(IS_RELEASE TRUE)
+endif()
+
 set(CMAKE_C_STANDARD 11)
 
 # include(CheckIPOSupported)
@@ -18,14 +22,14 @@ if (NOT MSVC)
 endif()
 add_definitions(-DWIN32_LEAN_AND_MEAN)
 add_definitions(-DNOMINMAX)
-if (NOT CMAKE_BUILD_TYPE STREQUAL Debug)
+if (IS_RELEASE)
   add_definitions(-DNDEBUG)
 endif()
 
 include_directories(include/)
 
-set(CJSON_OVERRIDE_BUILD_SHARED_LIBS ON)
-set(CJSON_BUILD_SHARED_LIBS OFF)
+set(CJSON_OVERRIDE_BUILD_SHARED_LIBS ON CACHE BOOL "Disable cJSON shared libs")
+set(CJSON_BUILD_SHARED_LIBS OFF CACHE BOOL "Disable cJSON shared libs")
 add_subdirectory(third_party/cjson EXCLUDE_FROM_ALL)
 
 add_library(service-provider SHARED)
@@ -100,3 +104,9 @@ add_custom_target(test-join
                --address INet=127.0.0.1 -r
 )
 add_dependencies(test-join service-provider cli-app)
+
+if (IS_RELEASE AND NOT MSVC)
+  target_link_options(service-provider PRIVATE -static-libgcc)
+  target_link_options(cli-app PRIVATE -static-libgcc)
+  target_link_options(enumerate-app PRIVATE -static-libgcc)
+endif()
