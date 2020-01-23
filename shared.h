@@ -1,6 +1,5 @@
 #pragma once
 #define INITGUID
-#define WIN32_LEAN_AND_MEAN
 #include <guiddef.h>
 #include <cguid.h>
 // IIDFromString, StringFromIID
