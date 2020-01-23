@@ -14,8 +14,16 @@ static BOOL json_rpc = FALSE;
 
 static char tmp_err_buffer[2048] = {0};
 
+/**
+ * Emit a notification.
+ *
+ * Takes ownership of the JSON object in `params`.
+ */
 void jsonrpc_emit(char* method, cJSON* params) {
-  if (!json_rpc) return;
+  if (!json_rpc) {
+    if (params != NULL) cJSON_Delete(params);
+    return;
+  }
   if (params == NULL) {
     params = cJSON_CreateNull();
   }
@@ -28,8 +36,16 @@ void jsonrpc_emit(char* method, cJSON* params) {
   cJSON_Delete(message);
 }
 
+/**
+ * Call a JSON-RPC method.
+ *
+ * Takes ownership of `params`.
+ */
 void jsonrpc_call(char* method, cJSON* params, DWORD id) {
-  if (!json_rpc) return;
+  if (!json_rpc) {
+    if (params != NULL) cJSON_Delete(params);
+    return;
+  }
   if (params == NULL) {
     params = cJSON_CreateNull();
   }
@@ -86,13 +102,17 @@ void jsonrpc_poll() {
   /* log("[jsonrpc_poll] received: %ld %s", bytes_read, stdin_buffer); */
 }
 
-void error(const char* format, ...) {
+void error(HRESULT hr, const char* format, ...) {
   va_list va;
   va_start(va, format);
 
   if (json_rpc) {
     vsprintf(tmp_err_buffer, format, va);
-    jsonrpc_emit("error", cJSON_CreateStringReference(tmp_err_buffer));
+    cJSON* json = cJSON_CreateObject();
+    if (hr != DP_OK)
+      cJSON_AddNumberToObject(json, "code", hr);
+    cJSON_AddStringToObject(json, "message", tmp_err_buffer);
+    jsonrpc_emit("error", json);
   } else {
     fprintf(stderr, format, va);
   }
@@ -177,7 +197,8 @@ static HRESULT parse_address_chunk(char* input, DPCOMPOUNDADDRESSELEMENT** out_a
   HRESULT result = DP_OK;
   char* eq = strchr(input, '=');
   char guid_str[60];
-  if (eq - input > 55) return DPERR_OUTOFMEMORY;
+  if (eq - input > 55)
+    return DPERR_OUTOFMEMORY;
   memcpy(guid_str, input, eq - input);
   guid_str[eq - input] = '\0';
 
@@ -373,7 +394,7 @@ int main(int argc, char** argv) {
     case 'J': {
       GUID guid = GUID_NULL;
       if (strlen(optarg) != 38 || guid_parse(optarg, &guid) != S_OK) {
-        error("--join got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
+        error(DPERR_INVALIDPARAM, "--join got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
         return 1;
       }
       desc.is_host = FALSE;
@@ -385,7 +406,7 @@ int main(int argc, char** argv) {
       if (optind < argc && argv[optind] != NULL && argv[optind][0] != '\0' && argv[optind][0] != '-') {
         log("--host guid: %s\n", argv[optind]);
         if (guid_parse(argv[optind], &desc.session_id) != S_OK) {
-          error("--host got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
+          error(DPERR_INVALIDPARAM, "--host got invalid GUID. required format: {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\n");
           return 1;
         }
         optind++;
@@ -397,7 +418,7 @@ int main(int argc, char** argv) {
       printf(help_text);
       return 0;
     default:
-      error("must provide --join or --host as the first argument\n");
+      error(DPERR_INVALIDPARAM, "must provide --join or --host as the first argument\n");
       return 1;
   }
 
@@ -407,15 +428,15 @@ int main(int argc, char** argv) {
   }
 
   if (desc.player_name == NULL) {
-    error("Missing --player\n");
+    error(DPERR_INVALIDPARAM, "Missing --player\n");
     return 1;
   }
   if (IsEqualGUID(&desc.application, &GUID_NULL)) {
-    error("Missing --application\n");
+    error(DPERR_INVALIDPARAM, "Missing --application\n");
     return 1;
   }
   if (IsEqualGUID(&desc.service_provider, &GUID_NULL)) {
-    error("Missing --service-provider\n");
+    error(DPERR_INVALIDPARAM, "Missing --service-provider\n");
     return 1;
   }
 
@@ -424,7 +445,7 @@ int main(int argc, char** argv) {
   if (use_dprun_sp) {
     result = dpsp_register();
     if (FAILED(result)) {
-      error("Could not register DPRun service provider: %s\n", get_error_message(result));
+      error(result, "Could not register DPRun service provider: %s\n", get_error_message(result));
       return 1;
     }
   }
@@ -433,10 +454,11 @@ int main(int argc, char** argv) {
 
   result = session_launch(&desc);
   if (FAILED(result)) {
-    error("Fail: %ld\n", result);
     char* message = get_error_message(result);
     if (message != NULL) {
-      error("%s\n", message);
+      error(result, "%s\n", message);
+    } else {
+      error(result, "Fail: %ld\n", result);
     }
     free(message);
 
